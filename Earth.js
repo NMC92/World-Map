@@ -1,10 +1,5 @@
-let CC = '';
-
 if(navigator.userAgent.toLowerCase().indexOf("android") > -1)
-{
-	document.body.style.transform = "scale(0.5)";
-	document.body.style.transform = "translate(0, 0)";
-}
+	document.body.style.zoom="1%";
 
 $(function()
 {
@@ -37,7 +32,7 @@ $(function()
 	{
 		const txt1 = 'AuxFiles/', txt2 = 'Continents+Countries', txt3 = '.txt', txt4 = '.json', txt5 = 'imgs/', txt6 = '.png', $map = $(a.target.contentDocument), $paths = $map.find('path'), pathsAsValues = Object.values($paths).slice(0,1),
 		mapSvg = $map[0].children[0], mapWidth = $map[0].children[0].getBBox().width, mapHeight = $map[0].children[0].getBBox().height, htmlPaths = $map[0].querySelector('svg');
-		let global = [], clicked = [], childrenElements = [], filterElems = [], jsonCountry = [], loaded = [], txtSorted  = [], txtAux = [], parsed = [], loadedPins = [], jsonLoaded = {CC: '', Id: undefined, JsonData: undefined, Name: ''}, txtLoaded = {CC: '', Id: undefined, Name: '', TxtData: undefined}, 
+		let global = [], clicked = [], childrenElements = [], filterElems = [], jsonCountry = [], loaded = [],  loadedPins = [], jsonLoaded = {CC: '', Id: undefined, JsonData: undefined, Name: ''}, txtLoaded = {CC: '', Id: undefined, Name: '', TxtData: undefined}, 
 		transContinental = ['AM', 'AZ', 'CY', 'EG', 'GE', 'ID', 'KZ', 'RU', 'TR'],
 		emptyCountries = ['AI', 'IO', 'PN', 'VA'],
 		smallC = ['AD', 'GI', 'LI', 'MC', 'SM', 'VA'],
@@ -118,74 +113,7 @@ $(function()
 			}
 			return -1;
 		}
-
-		function copyToClipboard(text) 
-		{
-			function success(value)
-			{
-				//alert('Copied!');
-				console.log('Copied!');
-				//console.log('Resolved: ', value);
-			}
-			function error(err)
-			{
-				//alert('Error: ' + err);
-				console.error('Error: ', err);
-			}
-			
-			if(navigator.clipboard)
-			{ 	// default: modern asynchronous API
-				console.log('Attempting to copy:');
-				console.log(text);
-				return navigator.clipboard.writeText(text).then(success, error).catch(error);
-			}
-			else if(window.clipboardData && window.clipboardData.setData)
-			{ 	// for IE11
-				window.clipboardData.setData('Text', text);
-				return Promise.resolve();
-			}
-			else
-			{
-				// workaround: create dummy input
-				const input = h('input', { type: 'text' });
-				input.value = text;
-				document.body.append(input);
-				input.focus();
-				input.select();
-				document.execCommand('copy');
-				input.remove();
-				return Promise.resolve();
-			}
-		}
-
-		function cloneArray(sourceArray)
-		{
-			return(JSON.parse(JSON.stringify(sourceArray)));
-		}
 		
-		Array.prototype.naturalSort = function()
-		{
-			var a, b, a1, b1, rx=/(\d+)|(\D+)/g, rd=/\d+/;
-			return this.sort(function(as, bs)
-			{
-				a= String(as).toLowerCase().match(rx);
-				b= String(bs).toLowerCase().match(rx);
-				while(a.length && b.length)
-				{
-					a1= a.shift();
-					b1= b.shift();
-					if(rd.test(a1) || rd.test(b1))
-					{
-						if(!rd.test(a1)) return 1;
-						if(!rd.test(b1)) return -1;
-						if(a1!= b1) return a1-b1;
-					}
-					else if(a1!= b1) return a1>b1? 1: -1;
-				}
-				return a.length-b.length;
-			});
-		}
-
 		function updateProgressBar(cur, tot)
 		{
 			let value = Math.floor(cur * 100 / tot);
@@ -195,16 +123,6 @@ $(function()
 		    progressValue.innerHTML = `${value}%(${cur}/${tot})`;
 		}
 		
-		function onlyUnique(value, index, self) 
-		{
-			return self.indexOf(value) === index;
-		}
-
-		function nonUnique(value, index, self) 
-		{
-			return self.indexOf(value) !== index;
-		}
-	
 		function findCountryCode(element)
 		{
 			if(element === undefined)
