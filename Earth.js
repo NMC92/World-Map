@@ -1,5 +1,4 @@
-if(navigator.userAgent.toLowerCase().indexOf("android") > -1)
-	document.body.style.zoom="1%";
+document.body.style.zoom="1%";
 
 $(function()
 {
