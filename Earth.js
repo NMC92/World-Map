@@ -1,4 +1,3 @@
-import Operations from '/AuxFiles/AddedFunctions/Operations.js';
 let CC = '';
 
 if(navigator.userAgent.toLowerCase().indexOf("android") > -1)
@@ -10,13 +9,6 @@ if(navigator.userAgent.toLowerCase().indexOf("android") > -1)
 $(function()
 {
 	$('#span').hide();
-	if(CC !== '' && CC !== undefined)
-	{
-		//Operations.sortJsonCountry(CC);
-		//Operations.sortGlobalJson();
-		//Operations.sortTxtCountry(CC);
-		//Operations.compareJsonTxt(CC);
-	}
 	
 	function orderPins(pins)
 	{
