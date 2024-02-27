@@ -52,10 +52,10 @@ loadedPins.push(pin);});}).fail(function()
 if(parseInt(globEl.Element.AdminLevel_Child)>12)
 {span.innerHTML=globEl.Element.Name_Child;return;}
 clicked.forEach((clk)=>{if(parseInt(clk.Element.AdminLevel_Child)>parseInt(globEl.Element.AdminLevel_Child))
-{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id).forEach(el=>{$(el.Path).hide();$(el.Image).hide();});clicked.splice(clicked.indexOf(clk,1));}});if(clicked.length===0)
+{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id).forEach(el=>{$(el.Path).hide();$(el.Img).hide();});clicked.splice(clicked.indexOf(clk,1));}});if(clicked.length===0)
 clicked.push(globEl);else
 {if(globEl.Element.Id_Child!==clicked.at(-1).Element.Id_Child)
-{pinClicked=false;$(container).text('');loadedPins.forEach(el=>{$(el.Path).hide();$(el.Image).hide();});if(parseInt(globEl.Element.AdminLevel_Child)===parseInt(clicked.at(-1).Element.AdminLevel_Child))
+{pinClicked=false;$(container).text('');loadedPins.forEach(el=>{$(el.Path).hide();$(el.Img).hide();});if(parseInt(globEl.Element.AdminLevel_Child)===parseInt(clicked.at(-1).Element.AdminLevel_Child))
 {clicked.splice(clicked.indexOf(clicked.at(-1)),1);clicked.push(globEl);}
 else if(parseInt(globEl.Element.AdminLevel_Child)>parseInt(clicked.at(-1).Element.AdminLevel_Child))
 clicked.push(globEl);}}
@@ -71,25 +71,25 @@ else
 matchingPins.forEach((foundPin,index)=>{if($('#container').children().length===0)
 {let opt=document.createElement("option");opt.value=foundPin.Id;opt.text=foundPin.Name;sel.appendChild(opt);}
 if(foundPin.Path===undefined)
-{console.log("Pin(s) found!");let pathPin=document.createElementNS("http://www.w3.org/2000/svg","path"),imgPin=document.createElementNS("http://www.w3.org/2000/svg","image");pathPin.setAttributeNS(null,"d",foundPin.D);pathPin.setAttributeNS(null,"id",`pin/${foundPin.Element_Id}-${foundPin.Id}`);pathPin.setAttributeNS(null,"class",`pin`);pathPin.setAttributeNS(null,"name",foundPin.Name);let pathImgs=buildPathImgs(globEl,foundPin);imgPin.setAttributeNS('http://www.w3.org/1999/xlink',"xlink:href",pathImgs);imgPin.setAttributeNS(null,"width",foundPin.Width);imgPin.setAttributeNS(null,"height",foundPin.Height);imgPin.setAttributeNS(null,"id",`image/${foundPin.Element_Id}-${foundPin.Id}`);imgPin.setAttributeNS(null,"x",foundPin.X);imgPin.setAttributeNS(null,"y",foundPin.Y);imgPin.setAttributeNS(null,"class","img");pathPin.addEventListener('mouseover',el=>{if(!pinClicked)
-{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Image).hide();});}});pathPin.addEventListener('mouseout',el=>{if(!pinClicked)
-{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Image).show();});}});pathPin.addEventListener('click',el=>{if(pinClicked)
-{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Image).show();});pinClicked=false;}
+{console.log("Pin(s) found!");let pathPin=document.createElementNS("http://www.w3.org/2000/svg","path"),imgPin=document.createElementNS("http://www.w3.org/2000/svg","image");pathPin.setAttributeNS(null,"d",foundPin.D);pathPin.setAttributeNS(null,"id",`pin/${foundPin.Element_Id}-${foundPin.Id}`);pathPin.setAttributeNS(null,"class",`pin`);pathPin.setAttributeNS(null,"name",foundPin.Name);let pathImgs=buildPathImgs(globEl,foundPin);imgPin.setAttributeNS('http://www.w3.org/1999/xlink',"xlink:href",${pathImgs});imgPin.setAttributeNS(null,"width",foundPin.Width);imgPin.setAttributeNS(null,"height",foundPin.Height);imgPin.setAttributeNS(null,"id",`image/${foundPin.Element_Id}-${foundPin.Id}`);imgPin.setAttributeNS(null,"x",foundPin.X);imgPin.setAttributeNS(null,"y",foundPin.Y);imgPin.setAttributeNS(null,"class","img");pathPin.addEventListener('mouseover',el=>{if(!pinClicked)
+{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Img).hide();});}});pathPin.addEventListener('mouseout',el=>{if(!pinClicked)
+{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Img).show();});}});pathPin.addEventListener('click',el=>{if(pinClicked)
+{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Img).show();});pinClicked=false;}
 else
-{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Image).hide();});pinClicked=true;}
+{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Img).hide();});pinClicked=true;}
 $(document).find('select')[0].options.selectedIndex=orderPins(loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id)).indexOf(loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id).find(pin=>el.target.id===`pin/${pin.Element_Id}-${pin.Id}`))+1;zoomOnElement(el.target,a.target.contentDocument);span.innerHTML=`Highlight selected: ${$(pathPin).attr('name')}`;});imgPin.addEventListener('mouseover',el=>{if(!pinClicked)
-{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Image).hide();});}});imgPin.addEventListener('mouseout',el=>{if(!pinClicked)
-{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Image).show();});}});imgPin.addEventListener('click',el=>{if(pinClicked)
-{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Image).show();});pinClicked=false;}
+{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Img).hide();});}});imgPin.addEventListener('mouseout',el=>{if(!pinClicked)
+{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Img).show();});}});imgPin.addEventListener('click',el=>{if(pinClicked)
+{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Img).show();});pinClicked=false;}
 else
-{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Image).hide();});pinClicked=true;}
-$(document).find('select')[0].options.selectedIndex=orderPins(loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id)).indexOf(loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id).find(pin=>el.target.id===`image/${pin.Element_Id}-${pin.Id}`))+1;zoomOnElement(pathPin,a.target.contentDocument);span.innerHTML=`Highlight selected: ${$(pathPin).attr('name')}`;});foundPin.Path=pathPin;foundPin.Image=imgPin;fragment.appendChild(pathPin);fragment.appendChild(imgPin);}
+{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Img).hide();});pinClicked=true;}
+$(document).find('select')[0].options.selectedIndex=orderPins(loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id)).indexOf(loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id).find(pin=>el.target.id===`image/${pin.Element_Id}-${pin.Id}`))+1;zoomOnElement(pathPin,a.target.contentDocument);span.innerHTML=`Highlight selected: ${$(pathPin).attr('name')}`;});foundPin.Path=pathPin;foundPin.Img=imgPin;fragment.appendChild(pathPin);fragment.appendChild(imgPin);}
 else
 {if($(foundPin.Path).css('display')==='none')
-{$(foundPin.Path).show();$(foundPin.Image).show();}}});if($('#container').children().length===0)
+{$(foundPin.Path).show();$(foundPin.Img).show();}}});if($('#container').children().length===0)
 {let label=document.createElement("label");label.innerHTML="Highlights: "
 $('#container')[0].appendChild(label).appendChild(sel);sel.addEventListener("change",op=>{let selectedPin=orderPins(loadedPins).filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id)[op.target.selectedIndex-1];if(selectedPin.Id!==undefined)
-{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&pin.Id!==selectedPin.Id).forEach(el2=>{$(el2.Path).hide();$(el2.Image).hide();});pinClicked=true;$(selectedPin.Path).show();$(selectedPin.Image).show();zoomOnElement(selectedPin.Path,a.target.contentDocument);span.innerHTML=`Highlight: ${sel.options[op.target.selectedIndex].innerText}`;}});}
+{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&pin.Id!==selectedPin.Id).forEach(el2=>{$(el2.Path).hide();$(el2.Img).hide();});pinClicked=true;$(selectedPin.Path).show();$(selectedPin.Img).show();zoomOnElement(selectedPin.Path,a.target.contentDocument);span.innerHTML=`Highlight: ${sel.options[op.target.selectedIndex].innerText}`;}});}
 else
 $(document).find('select')[0].options.selectedIndex=0;htmlPaths.append(fragment);zoomOnElement(globEl,a.target.contentDocument);}
 else
@@ -192,7 +192,7 @@ else
 {svg.children[0].setAttribute(`viewBox`,`0 0 ${mapWidth} ${mapHeight}`);$("#reset").prop("disabled",false);$("#back").prop("disabled",false);zooming=false;}}}
 function resetZoom(svg)
 {$(container).text('');clicked=[];pinClicked=false
-let pinsToHide=loadedPins.filter(el=>$(el.Path).attr('d')!=='');pinsToHide.forEach((pinToHide)=>{$(pinToHide.Path).hide();$(pinToHide.Image).hide();});loadedPins=[];$('#back').hide();jsonLoaded={CC:'',Id:undefined,jsonData:undefined,Name:''};txtLoaded={CC:'',Id:undefined,Name:'',TxtData:undefined};let elsToRemove=global.filter(el2=>parseInt(el2.Element.AdminLevel_Child)>0&&$(el2.Path).attr('d')!=='');elsToRemove.forEach((elToRemove)=>{hidePath(elToRemove.Path);});if(elsToRemove.length>0)
+let pinsToHide=loadedPins.filter(el=>$(el.Path).attr('d')!=='');pinsToHide.forEach((pinToHide)=>{$(pinToHide.Path).hide();$(pinToHide.Img).hide();});loadedPins=[];$('#back').hide();jsonLoaded={CC:'',Id:undefined,jsonData:undefined,Name:''};txtLoaded={CC:'',Id:undefined,Name:'',TxtData:undefined};let elsToRemove=global.filter(el2=>parseInt(el2.Element.AdminLevel_Child)>0&&$(el2.Path).attr('d')!=='');elsToRemove.forEach((elToRemove)=>{hidePath(elToRemove.Path);});if(elsToRemove.length>0)
 {showPath(global[0].Path,global[0].D);svg.children[0].setAttribute(`viewBox`,`0 0 ${mapWidth} ${mapHeight}`);$('#reset').hide();$('#span').hide();}}
 function printStats(msg)
 {if(msg)
@@ -201,7 +201,7 @@ $('#reset').on('click',function()
 {hideLoader();resetZoom($map[0]);});$('#back').on('click',function()
 {if(clicked.length>1)
 {let glob=clicked.at(-1);$(container).text('');pinClicked=false
-let pinsToHide=loadedPins.filter(el=>el.Element_Id===glob.Element.Id&&$(el.Path).attr('d')!=='');pinsToHide.forEach((pinToHide)=>{$(pinToHide.Path).hide();$(pinToHide.Image).hide();});glob.Children.forEach((child,index)=>{hidePath(child.Path);});let par=clicked.at(-2);par.Children.forEach((child)=>{showPath(child.Path,child.D);});if(par.Parents!==undefined&&parseInt(par.Element.AdminLevel_Child)!==2)
+let pinsToHide=loadedPins.filter(el=>el.Element_Id===glob.Element.Id&&$(el.Path).attr('d')!=='');pinsToHide.forEach((pinToHide)=>{$(pinToHide.Path).hide();$(pinToHide.Img).hide();});glob.Children.forEach((child,index)=>{hidePath(child.Path);});let par=clicked.at(-2);par.Children.forEach((child)=>{showPath(child.Path,child.D);});if(par.Parents!==undefined&&parseInt(par.Element.AdminLevel_Child)!==2)
 {par.Parents.forEach((pt2)=>{pt2.Children.forEach((child2)=>{showPath(child2.Path,child2.D)});});}
 if(parseInt(glob.Element.AdminLevel_Child)>1)
 {showPath(par.Path,par.D);zoomOnElement(par,a.target.contentDocument);hidePath(par.Path);span.innerHTML=par.Element.Name_Child;}
