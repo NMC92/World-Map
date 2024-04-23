@@ -1,823 +1,94 @@
-document.body.style.zoom = "1%";
-$(function () {
-    $('#span').hide();
-    function orderPins(pins) {
-        let auxPins = [];
-        for (let i = 0; i < pins.length; i++)
-            auxPins.push(pins[i]);
-        auxPins.sort(function (a, b) {
-            if (a.Name.toLowerCase() < b.Name.toLowerCase())
-                return -1;
-            if (a.Name.toLowerCase() > b.Name.toLowerCase())
-                return 1;
-        });
-        return auxPins;
-    }
-    function now() {
-        return typeof window.performance !== 'undefined' ? window.performance.now() : 0;
-    }
-    $('#svg-map').on('load', function (a) {
-        const txt1 = 'AuxFiles/',
-        txt2 = 'Continents+Countries',
-        txt3 = '.txt',
-        txt4 = '.json',
-        txt5 = 'imgs/',
-        txt6 = '.png',
-        txt7 = 'Earth+Continents+Countries',
-        txt8 = '/Pins',
-        txt9 = 'https://storage.googleapis.com/',
-        txtBucket = 'mappu-bucket'
-            $map = $(a.target.contentDocument),
-        $paths = $map.find('path'),
-        pathsAsValues = Object.values($paths).slice(0, 1),
-        mapSvg = $map[0].children[0],
-        mapWidth = $map[0].children[0].getBBox().width,
-        mapHeight = $map[0].children[0].getBBox().height,
-        htmlPaths = $map[0].querySelector('svg');
-        let global = [],
-        clicked = [],
-        childrenElements = [],
-        filterElems = [],
-        jsonCountry = [],
-        loaded = [],
-        loadedPins = [],
-        jsonLoaded = {
-            CC: '',
-            Id: undefined,
-            JsonData: undefined,
-            Name: ''
-        },
-        txtLoaded = {
-            CC: '',
-            Id: undefined,
-            Name: '',
-            TxtData: undefined
-        },
-        transContinental = ['AM', 'AZ', 'CY', 'EG', 'GE', 'ID', 'KZ', 'RU', 'TR'],
-        emptyCountries = ['AI', 'IO', 'PN', 'VA'],
-        smallC = ['AD', 'GI', 'LI', 'MC', 'SM', 'VA'],
-        start,
-        end,
-        globalJson,
-        countryCode = '',
-        second = '',
-        diffCCode = false,
-        loader = false,
-        progressBar = document.getElementById("progress-bar"),
-        progressValue = document.getElementById("progress-value"),
-        zooming = false,
-        pinClicked = false,
-        containerLoaded = false,
-        resizeVar = 60;
-        function buildPathImgs(globEl, foundPin) {
-            let strPath = '';
-            for (let i = 0; i < clicked.length; i++)
-                strPath += clicked[i].Element.Id + '/';
-            strPath += `${foundPin.Id}${txt6}`;
-            return strPath;
-        }
-        function showLoader() {
-            loader = true;
-            $("#reset").prop("disabled", true);
-            $("#back").prop("disabled", true);
-            $("#span").hide();
-            $("#loader").show();
-            $("#progress-bar").show();
-            progressBar.value = 0;
-            $("#progress-value").show();
-            progressValue.innerHTML = "0%";
-        }
-        function hideLoader() {
-            $("#loader").hide();
-            $("#progress-bar").hide();
-            $("#progress-value").hide();
-            $("#reset").prop("disabled", false);
-            $("#back").prop("disabled", false);
-            $("#span").show();
-            if (!zooming) {
-                $("#reset").prop("disabled", false);
-                $("#back").prop("disabled", false);
-            }
-            loader = false;
-        }
-        function binarySearchGlobal(array, targetValue) {
-            let min = 0,
-            max = array.length - 1,
-            guess,
-            guessValue;
-            while (min <= max) {
-                guess = Math.floor((max + min) / 2);
-                guessValue = parseInt(array[guess].Element.Id);
-                if (guessValue === targetValue)
-                    return array[guess];
-                else if (guessValue < targetValue)
-                    min = guess + 1;
-                else
-                    max = guess - 1;
-            }
-            return -1;
-        }
-        function binarySearch(array, targetValue) {
-            let min = 0,
-            max = array.length - 1,
-            guess,
-            guessValue;
-            while (min <= max) {
-                guess = Math.floor((max + min) / 2);
-                guessValue = array[guess];
-                if (guessValue === targetValue)
-                    return array[guess];
-                else if (guessValue < targetValue)
-                    min = guess + 1;
-                else
-                    max = guess - 1;
-            }
-            return -1;
-        }
-        function updateProgressBar(cur, tot) {
-            let value = Math.floor(cur * 100 / tot);
-            if (value > 100)
-                value = 100;
-            progressBar.value = value;
-            progressValue.innerHTML = `${value}%(${cur}/${tot})`;
-        }
-        function findCountryCode(element) {
-            if (element === undefined)
-                return countryCode;
-            if (parseInt(element.Element.AdminLevel_Child) < 2)
-                return '';
-            if (element.Element.CountryCode_Child !== undefined && element.Element.CountryCode_Child !== '' && parseInt(element.Element.AdminLevel_Child) === 2)
-                return element.Element.CountryCode_Child;
-            let parentEl = global.filter(el => {
-                return el.Element.Id_Child === element.Element.Id_Parent || element.Element.Id_Parent.split(', ').find(el2 => el2 === el.Element.Id_Child);
-            });
-            if (parentEl.length > 1)
-                return findCountryCode(parentEl[parentEl.length - 1]);
-            return findCountryCode(parentEl[0]);
-        }
-        function bringToTop(targetElement) {
-            let parent = targetElement.parentNode;
-            parent.appendChild(targetElement);
-        }
-        function applyEvList(globEl, element) {
-            function loadPins() {
-                let pinsPath = parseInt(globEl.Element.AdminLevel_Child) > 1 ? `${txt1}${countryCode}${txt8}${txt4}` : `${txt1}${txt8}${txt4}`;
-                $.getJSON(pinsPath, function ($pinsFile) {
-                    if ($pinsFile.length > 0)
-                        $pinsFile.forEach((pin) => {
-                            if (!loadedPins.includes(pin) && parseInt(pin.Element_Id) !== -1)
-                                loadedPins.push(pin);
-                        });
-                }).fail(function () {
-                    console.log(`No pins in ${globEl.Element.Name_Child}...`);
-                });
-            }
-            if (parseInt(globEl.Element.AdminLevel_Child) > 12) {
-                span.innerHTML = globEl.Element.Name_Child;
-                return;
-            }
-            clicked.forEach((clk) => {
-                if (parseInt(clk.Element.AdminLevel_Child) > parseInt(globEl.Element.AdminLevel_Child)) {
-                    loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id).forEach(el => {
-                        $(el.Path).hide();
-                        $(el.Img).hide();
-                    });
-                    clicked.splice(clicked.indexOf(clk, 1));
-                }
-            });
-            if (clicked.length === 0)
-                clicked.push(globEl);
-            else {
-                if (globEl.Element.Id_Child !== clicked.at(-1).Element.Id_Child) {
-                    pinClicked = false;
-                    $(container).text('');
-                    loadedPins.forEach(el => {
-                        $(el.Path).hide();
-                        $(el.Img).hide();
-                    });
-                    if (parseInt(globEl.Element.AdminLevel_Child) === parseInt(clicked.at(-1).Element.AdminLevel_Child)) {
-                        clicked.splice(clicked.indexOf(clicked.at(-1)), 1);
-                        clicked.push(globEl);
-                    } else if (parseInt(globEl.Element.AdminLevel_Child) > parseInt(clicked.at(-1).Element.AdminLevel_Child))
-                        clicked.push(globEl);
-                }
-            }
-            if (parseInt(globEl.Element.AdminLevel_Child) >= 0 && $('#back').css('display') === 'none')
-                $('#back').show();
-            switch (parseInt(globEl.Element.AdminLevel_Child)) {
-            case 0:
-            case 1:
-            case 2:
-            case 3:
-            case 4:
-            case 5:
-            case 6:
-            case 7:
-            case 8:
-            case 9:
-            case 10:
-            case 11:
-            case 12:
-                global.filter(el2 => parseInt(el2.Element.AdminLevel_Child) > parseInt(globEl.Element.AdminLevel_Child) && el2.Element.Id_Parent !== globEl.Element.Id_Parent && $(el2.Path).attr('d') !== '' || parseInt(el2.Element.AdminLevel_Child) < parseInt(globEl.Element.AdminLevel_Child) && el2.Element.Id_Parent === globEl.Element.Id_Parent).forEach((elem) => {
-                    hidePath(elem.Path);
-                });
-                global.filter(el2 => el2.Element.Id_Parent === globEl.Element.Id_Parent && parseInt(el2.Element.AdminLevel_Child) >= parseInt(globEl.Element.AdminLevel_Child) && $(el2.Path).attr('d') === '' && (parseInt(globEl.Element.AdminLevel_Child) !== 2)).forEach((elem) => {
-                    showPath(elem.Path, elem.D);
-                });
-                if (childrenElements.length > 0) {
-                    let boundingRect = globEl.Path.getBBox();
-                    if (parseInt(globEl.Element.AdminLevel_Child) > 1 && boundingRect.width < mapWidth / 2 && boundingRect.height < mapHeight / 2)
-                        zoomOnElement(globEl, a.target.contentDocument);
-                    hidePath(globEl.Path);
-                } else {
-                    hideLoader();
-                    span.innerHTML = globEl.Element.Name_Child;
-                    let matchingPins = loadedPins.filter(el => el.Element_Id === clicked.at(-1).Element.Id);
-                    if (matchingPins.length > 0) {
-                        let fragment = document.createDocumentFragment();
-                        pinClicked = false;
-                        matchingPins = orderPins(matchingPins);
-                        let sel = document.createElement("select"),
-                        optionAux = document.createElement("option");
-                        if ($('#container').children().length === 0) {
-                            optionAux.value = null;
-                            optionAux.text = "Please choose an option:";
-                            sel.appendChild(optionAux);
-                        }
-                        matchingPins.forEach((foundPin, index) => {
-                            if ($('#container').children().length === 0) {
-                                let opt = document.createElement("option");
-                                opt.value = foundPin.Id;
-                                opt.text = foundPin.Name;
-                                sel.appendChild(opt);
-                            }
-                            if (foundPin.Path === undefined) {
-                                console.log("Pin(s) found!");
-                                let pathImgs = buildPathImgs(globEl, foundPin);
-                                let pathPin = document.createElementNS("http://www.w3.org/2000/svg", "path"),
-                                imgPin = document.createElementNS("http://www.w3.org/2000/svg", "image");
-                                pathPin.setAttributeNS(null, "d", foundPin.D);
-                                pathPin.setAttributeNS(null, "id", `pin/${foundPin.Element_Id}-${foundPin.Id}`);
-                                pathPin.setAttributeNS(null, "class", `pin`);
-                                pathPin.setAttributeNS(null, "name", foundPin.Name);
-                                imgPin.setAttributeNS('http://www.w3.org/1999/xlink', "xlink:href", `${txt9}${txtBucket}/${pathImgs}`);
-                                imgPin.setAttributeNS(null, "width", foundPin.Width);
-                                imgPin.setAttributeNS(null, "height", foundPin.Height);
-                                imgPin.setAttributeNS(null, "id", `image/${foundPin.Element_Id}-${foundPin.Id}`);
-                                imgPin.setAttributeNS(null, "x", foundPin.X);
-                                imgPin.setAttributeNS(null, "y", foundPin.Y);
-                                imgPin.setAttributeNS(null, "class", "img");
-                                pathPin.addEventListener('mouseover', el => {
-                                    if (!pinClicked) {
-                                        loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id && el.target.id !== `pin/${pin.Element_Id}-${pin.Id}`).forEach(el2 => {
-                                            $(el2.Path).hide();
-                                            $(el2.Img).hide();
-                                        });
-                                    }
-                                });
-                                pathPin.addEventListener('mouseout', el => {
-                                    if (!pinClicked) {
-                                        loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id && el.target.id !== `pin/${pin.Element_Id}-${pin.Id}`).forEach(el2 => {
-                                            $(el2.Path).show();
-                                            $(el2.Img).show();
-                                        });
-                                    }
-                                });
-                                pathPin.addEventListener('click', el => {
-                                    if (pinClicked) {
-                                        loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id && el.target.id !== `pin/${pin.Element_Id}-${pin.Id}`).forEach(el2 => {
-                                            $(el2.Path).show();
-                                            $(el2.Img).show();
-                                        });
-                                        pinClicked = false;
-                                    } else {
-                                        loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id && el.target.id !== `pin/${pin.Element_Id}-${pin.Id}`).forEach(el2 => {
-                                            $(el2.Path).hide();
-                                            $(el2.Img).hide();
-                                        });
-                                        pinClicked = true;
-                                    }
-                                    $(document).find('select')[0].options.selectedIndex = orderPins(loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id)).indexOf(loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id).find(pin => el.target.id === `pin/${pin.Element_Id}-${pin.Id}`)) + 1;
-                                    zoomOnElement(el.target, a.target.contentDocument);
-                                    span.innerHTML = `Highlight selected: ${$(pathPin).attr('name')}`;
-                                });
-                                imgPin.addEventListener('mouseover', el => {
-                                    if (!pinClicked) {
-                                        loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id && el.target.id !== `image/${pin.Element_Id}-${pin.Id}`).forEach(el2 => {
-                                            $(el2.Path).hide();
-                                            $(el2.Img).hide();
-                                        });
-                                    }
-                                });
-                                imgPin.addEventListener('mouseout', el => {
-                                    if (!pinClicked) {
-                                        loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id && el.target.id !== `image/${pin.Element_Id}-${pin.Id}`).forEach(el2 => {
-                                            $(el2.Path).show();
-                                            $(el2.Img).show();
-                                        });
-                                    }
-                                });
-                                imgPin.addEventListener('click', el => {
-                                    if (pinClicked) {
-                                        loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id && el.target.id !== `image/${pin.Element_Id}-${pin.Id}`).forEach(el2 => {
-                                            $(el2.Path).show();
-                                            $(el2.Img).show();
-                                        });
-                                        pinClicked = false;
-                                    } else {
-                                        loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id && el.target.id !== `image/${pin.Element_Id}-${pin.Id}`).forEach(el2 => {
-                                            $(el2.Path).hide();
-                                            $(el2.Img).hide();
-                                        });
-                                        pinClicked = true;
-                                    }
-                                    $(document).find('select')[0].options.selectedIndex = orderPins(loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id)).indexOf(loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id).find(pin => el.target.id === `image/${pin.Element_Id}-${pin.Id}`)) + 1;
-                                    zoomOnElement(pathPin, a.target.contentDocument);
-                                    span.innerHTML = `Highlight selected: ${$(pathPin).attr('name')}`;
-                                });
-                                foundPin.Path = pathPin;
-                                foundPin.Img = imgPin;
-                                fragment.appendChild(pathPin);
-                                fragment.appendChild(imgPin);
-                            } else {
-                                if ($(foundPin.Path).css('display') === 'none') {
-                                    $(foundPin.Path).show();
-                                    $(foundPin.Img).show();
-                                }
-                            }
-                        });
-                        if ($('#container').children().length === 0) {
-                            let label = document.createElement("label");
-                            label.innerHTML = "Highlights: "
-                                $('#container')[0].appendChild(label).appendChild(sel);
-                            sel.addEventListener("change", op => {
-                                let selectedPin = orderPins(loadedPins).filter(pin => pin.Element_Id === clicked.at(-1).Element.Id)[op.target.selectedIndex - 1];
-                                if (selectedPin.Id !== undefined) {
-                                    loadedPins.filter(pin => pin.Element_Id === clicked.at(-1).Element.Id && pin.Id !== selectedPin.Id).forEach(el2 => {
-                                        $(el2.Path).hide();
-                                        $(el2.Img).hide();
-                                    });
-                                    pinClicked = true;
-                                    $(selectedPin.Path).show();
-                                    $(selectedPin.Img).show();
-                                    zoomOnElement(selectedPin.Path, a.target.contentDocument);
-                                    span.innerHTML = `Highlight: ${sel.options[op.target.selectedIndex].innerText}`;
-                                }
-                            });
-                        } else
-                            $(document).find('select')[0].options.selectedIndex = 0;
-                        htmlPaths.append(fragment);
-                        zoomOnElement(globEl, a.target.contentDocument);
-                    } else {
-                        let par = clicked.at(-2);
-                        showPath(par.Path, par.D);
-                        zoomOnElement(par, a.target.contentDocument);
-                        hidePath(par.Path);
-                    }
-                    return;
-                }
-                let elsLoaded = childrenElements.filter(el => binarySearchGlobal(global, el.Id) !== -1).filter(el => el.CountryCode_Child === globEl.Element.CountryCode_Child);
-                if (elsLoaded.length > 0 && elsLoaded[0].Id_Parent.split(', ').length < 1) {
-                    elsLoaded.forEach((el, index) => {
-                        let pathToShow = binarySearchGlobal(global, el.Id);
-                        showPath(pathToShow.Path, pathToShow.D);
-                    });
-                    if (elsLoaded.length !== childrenElements.length && elsLoaded.find(fNTC => transContinental.find(tCont => tCont !== fNTC.CountryCode_Child) !== undefined))
-                        alert(`Number of elements loaded from memory is different than number of children! Loaded from memory: ${elsLoaded.length}, number of children(childrenElements.map(childEl => childEl.Id_Child )): ${childrenElements.length}`);
-                    hideLoader();
-                    span.innerHTML = globEl.Element.Name_Child;
-                } else if (txtLoaded.Id !== undefined && globEl.Element.CountryCode_Child !== '' && globEl.Element.CountryCode_Child === txtLoaded.CC) {
-                    let childrenLoaded = [];
-                    start = now();
-                    const indexes = childrenElements.map(el => el.Index);
-                    function addToDocumentFragment(data, indexes) {
-                        let fragment = document.createDocumentFragment(),
-                        jsonData = indexes.map(item => jsonCountry[item]).filter(el => binarySearch(loaded, el.Id) === -1),
-                        pathData = indexes.filter(el => binarySearch(loaded, parseInt(data[el][1])) === -1).map(el => data[el]);
-                        for (let i = 0; i < jsonData.length; i++) {
-                            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                            path.setAttributeNS(null, "d", pathData[i][0]);
-                            path.setAttributeNS(null, "id", jsonData[i].Id_Child);
-                            path.setAttributeNS(null, "transform", `scale(${resizeVar}, ${resizeVar})`);
-                            applyStyle(jsonData[i], path);
-                            fragment.appendChild(path);
-                        }
-                        htmlPaths.append(fragment);
-                        end = now();
-                        printStats(`Finished creating Paths for ${globEl.Element.Name_Child}!`);
-                    }
-                    addToDocumentFragment(txtLoaded.TxtData, indexes);
-                    start = now();
-                    for (let i = 0; i < indexes.length; i++) {
-                        let currValues = txtLoaded.TxtData[indexes[i]],
-                        [currPath, currId] = [currValues[0], parseInt(currValues[1])],
-                        foundChild = childrenElements[i],
-                        pathTemp = htmlPaths.children.namedItem(foundChild.Id_Child),
-                        globalElem = binarySearchGlobal(global, foundChild.Id);
-                        if (globalElem === -1) {
-                            global.push({
-                                Element: foundChild,
-                                Path: pathTemp,
-                                D: $(pathTemp).attr('d'),
-                                Parents: [globEl],
-                                Children: []
-                            });
-                            globalElem = global.at(-1);
-                            globalElem.Parents[0].Children.push(globalElem);
-                        } else
-                            showPath(globalElem.Path, globalElem.D);
-                        if (binarySearch(loaded, foundChild.Id) === -1) {
-                            childrenLoaded.push(foundChild.Id_Child);
-                            loaded.push(foundChild.Id);
-                            pathsAsValues.push(pathTemp);
-                            addEvListener(pathTemp, global.length - 1);
-                        };
-                        updateProgressBar(childrenLoaded.length, childrenElements.length);
-                    }
-                    global = global.sort((a, b) => a.Element.Id - b.Element.Id);
-                    loaded.sort((a, b) => a - b);
-                    end = now();
-                    printStats(`Finished creating SVG paths for ${globEl.Element.Name_Child} from data in memory!`);
-                    hideLoader();
-                    span.innerHTML = globEl.Element.Name_Child;
-                    return;
-                } else {
-                    let childrenImported = [];
-                    let fileToLoad = (parseInt(globEl.Element.AdminLevel_Child) < 2) ? `${txt1}${txt2}${txt3}` : `${txt1 + countryCode}/${countryCode}${txt3}`;
-                    start = now();
-                    fetch(fileToLoad).then(response => response.text()).then(text => {
-                        function addToDocumentFragment(data, indexes) {
-                            let fragment = document.createDocumentFragment(),
-                            jsonData = indexes.map(item => ((parseInt(globEl.Element.AdminLevel_Child) < 2) ? globalJson : jsonCountry)[item]).filter(el => binarySearch(loaded, el.Id) === -1),
-                            country =  + (parseInt(globEl.Element.AdminLevel_Child) < 2),
-                            pathData = indexes.filter(el => binarySearch(loaded, parseInt(data[el - country][1])) === -1).map(index => data[index - country]);
-                            for (let i = 0; i < jsonData.length; i++) {
-                                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                                path.setAttributeNS(null, "d", pathData[i][0]);
-                                path.setAttributeNS(null, "id", jsonData[i].Id_Child);
-                                path.setAttributeNS(null, "transform", `scale(${resizeVar}, ${resizeVar})`);
-                                applyStyle(jsonData[i], path);
-                                fragment.appendChild(path);
-                            }
-                            htmlPaths.append(fragment);
-                            end = now();
-                            printStats(`Finished creating Paths for ${globEl.Element.Name_Child}!`);
-                        }
-                        end = now();
-                        printStats(`Finished loading txt for ${globEl.Element.Name_Child}!`);
-                        start = now();
-                        let parsedData = Papa.parse(text, {
-                            delimiter: ':'
-                        });
-                        if (parseInt(globEl.Element.AdminLevel_Child) === 2) {
-                            [txtLoaded.CC, txtLoaded.Id, txtLoaded.Name, txtLoaded.TxtData] = [globEl.Element.CountryCode_Child, globEl.Element.Id, globEl.Element.Name_Child, parsedData.data];
-                            [jsonLoaded.CC, jsonLoaded.Id, jsonLoaded.JsonData, jsonLoaded.Name] = [txtLoaded.CC, txtLoaded.Id, jsonCountry, txtLoaded.Name];
-                        }
-                        const indexes = childrenElements.map(el => el.Index);
-                        addToDocumentFragment(parsedData.data, indexes);
-                        start = now();
-                        for (let i = 0; i < indexes.length; i++) {
-                            let foundChild = childrenElements[i],
-                            pathTemp = htmlPaths.children.namedItem(foundChild.Id_Child),
-                            globalElem = binarySearchGlobal(global, foundChild.Id);
-                            if (globalElem === -1) {
-                                global.push({
-                                    Element: foundChild,
-                                    Path: pathTemp,
-                                    D: $(pathTemp).attr('d'),
-                                    Parents: [globEl],
-                                    Children: []
-                                });
-                                globalElem = global.at(-1);
-                                globalElem.Parents[0].Children.push(globalElem);
-                            } else
-                                showPath(globalElem.Path, globalElem.D);
-                            if (binarySearch(loaded, foundChild.Id) === -1) {
-                                loaded.push(foundChild.Id);
-                                pathsAsValues.push(pathTemp);
-                                addEvListener(pathTemp, global.length - 1);
-                            };
-                            childrenImported.push(foundChild.Id_Child);
-                            updateProgressBar(childrenImported.length, childrenElements.length);
-                        }
-                        if (globEl.Element.Id === 3) {
-                            bringToTop(htmlPaths.children.namedItem('relation/20'));
-                            bringToTop(htmlPaths.children.namedItem('relation/10'));
-                        }
-                        global = global.sort((a, b) => a.Element.Id - b.Element.Id);
-                        loaded.sort((a, b) => a - b);
-                        end = now();
-                        printStats(`Finished creating var infos for ${globEl.Element.Name_Child}!`);
-                        hideLoader();
-                        span.innerHTML = globEl.Element.Name_Child;
-                        loadPins();
-                        return;
-                    }).catch(error => console.error(error));
-                    return;
-                }
-                break;
-            default:
-                console.log(`${JSON.stringify(element)}`);
-            }
-        }
-        function hidePath(path) {
-            $(path).attr('d', '');
-        }
-        function showPath(path, value) {
-            $(path).attr('d', value);
-        }
-        function addEvListener(element, index) {
-            let globEl = global.at(-1);
-            globEl.Path.addEventListener('click', el => {
-                function svgPoint(element, x, y) {
-                    var pt = $map.children()[0].createSVGPoint();
-                    pt.x = x;
-                    pt.y = y;
-                    return pt.matrixTransform(element.getScreenCTM().inverse());
-                }
-                var t = el.target;
-                var x = el.clientX;
-                var y = el.clientY;
-                var target = $map.children()[0];
-                var svgP = svgPoint(target, x, y);
-                if (loader)
-                    return;
-                if (parseInt(globEl.Element.AdminLevel_Child) === 0)
-                    $('#reset').show();
-                $('#span').show();
-                let CC = findCountryCode(globEl);
-                countryCode = (CC !== '') ? CC : 'undefined';
-                if (parseInt(globEl.Element.AdminLevel_Child) <= 1) {
-                    childrenElements = globEl.Element.ChildrenIndexes.split(", ").map(el => globalJson[el]);
-                    showLoader();
-                    applyEvList(globEl, globEl.Path);
-                } else {
-                    if (emptyCountries.find(elem => elem === globEl.Element.CountryCode_Child) === undefined && globEl.Element.CountryCode_Child !== "") {
-                        if (jsonLoaded.Id !== undefined && jsonLoaded.CC === globEl.Element.CC) {
-                            if (parseInt(globEl.Element.AdminLevel_Child) === 2) {
-                                global.filter(el => parseInt(el.Element.AdminLevel_Child) < 3 && el.Element.Id_Child !== globEl.Element.Id_Child && $(el.Path).attr('d') !== '').forEach(elem => hidePath(elem.Path))
-                            }
-                            if (binarySearch(loaded, globEl.Element.Id) === -1) {
-                                jsonCountry.forEach((element, index) => {
-                                    let path = pathsAsValues.find((path) => {
-                                        return path.id === element.Id_Child;
-                                    });
-                                    if (path !== undefined && global.find(el => el.Element.Id_Child === path.id) === undefined)
-                                        global.push({
-                                            Element: element,
-                                            Index: index,
-                                            Path: path,
-                                            D: (path !== undefined) ? pathTargetJQ.attr('d') : undefined,
-                                            Parents: undefined,
-                                            Children: []
-                                        });
-                                });
-                                global = global.sort((a, b) => a.Element.Id - b.Element.Id);
-                            }
-                            childrenElements = (globEl.Element.ChildrenIndexes !== "") ? globEl.Element.ChildrenIndexes.split(", ").map(el => jsonCountry[el]) : "";
-                            if (childrenElements.length > 0)
-                                showLoader();
-                            applyEvList(globEl, globEl.Path);
-                            return 0;
-                        } else {
-                            $.getJSON(`${txt1}${countryCode}/${countryCode}${txt4}`, function ($jsonCountry) {
-                                if (parseInt(globEl.Element.AdminLevel_Child) === 2) {
-                                    global.filter(el => parseInt(el.Element.AdminLevel_Child) < 3 && el.Element.Id_Child !== globEl.Element.Id_Child && $(el.Path).attr('d') !== '').forEach(elem => hidePath(elem.Path))
-                                }
-                                jsonCountry = $jsonCountry;
-                                if (binarySearch(loaded, globEl.Element.Id) === -1) {
-                                    jsonCountry.forEach((element, index) => {
-                                        let path = pathsAsValues.find((path) => {
-                                            return path.id === element.Id_Child;
-                                        });
-                                        if (path !== undefined && global.find(el => el.Element.Id_Child === path.id) === undefined) {
-                                            global.push({
-                                                Element: element,
-                                                Index: index,
-                                                Path: path,
-                                                D: (path !== undefined) ? pathTargetJQ.attr('d') : undefined,
-                                                Parents: undefined,
-                                                Children: []
-                                            });
-                                            global = global.sort((a, b) => a.Element.Id - b.Element.Id);
-                                        }
-                                    });
-                                }
-                                childrenElements = (globEl.Element.ChildrenIndexes !== "") ? globEl.Element.ChildrenIndexes.split(", ").map(el => jsonCountry[el]) : "";
-                                if (childrenElements.length > 0)
-                                    showLoader();
-                                applyEvList(globEl, globEl.Path);
-                                return 0;
-                            }).always(function () {
-                                span.innerHTML = globEl.Element.Name_Child;
-                            });
-                        }
-                    } else
-                        span.innerHTML = globEl.Element.Name_Child;
-                }
-            });
-        }
-        function applyStyle(element, path) {
-            if (parseInt(element.AdminLevel_Child) === 2 && smallC.find(elem => elem === element.CountryCode_Child) !== undefined)
-                path.classList.add('style-8');
-            else if (parseInt(element.AdminLevel_Child) >= 4) {
-                switch (countryCode) {
-                case 'PT':
-                    diffCCode = false;
-                    switch (element.AdminLevel_Child) {
-                    case '4':
-                    case '6':
-                        path.classList.add('style-4');
-                        break;
-                    case '7':
-                        path.classList.add('style-6');
-                        break;
-                    case '8':
-                        path.classList.add('style-7');
-                        break;
-                    case '10':
-                        path.classList.add('style-8');
-                        break;
-                    default:
-                        debugger;
-                    }
-                    break;
-                case 'AD':
-                case 'GI':
-                case 'LI':
-                case 'MC':
-                case 'SM':
-                    diffCCode = false;
-                    path.classList.add('style-8');
-                    break;
-                case 'FR':
-                    if (element.CountryCode_Child === 'GF' || element.CountryCode_Parent === 'NC' || diffCCode) {
-                        if (!diffCCode)
-                            diffCCode = true;
-                        path.classList.add('style-5');
-                    } else {
-                        diffCCode = false;
-                        path.classList.add(`style-${element.AdminLevel_Child}`);
-                    }
-                    break;
-                default:
-                    diffCCode = false;
-                    path.classList.add(`style-${element.AdminLevel_Child}`);
-                }
-            } else {
-                diffCCode = false;
-                path.classList.add(`style-${element.AdminLevel_Child}`);
-            }
-            return path;
-        }
-        function lerp(start, end, t) {
-            return start * (1 - t) + end * t;
-        }
-        function animateZoom(svg, startViewBox, endViewBox, duration) {
-            const startTime = performance.now();
-            function step(timestamp) {
-                const elapsed = timestamp - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const currentViewBox = startViewBox.map((val, i) => lerp(val, endViewBox[i], progress));
-                svg.children[0].setAttribute('viewBox', currentViewBox.join(' '));
-                if (progress < 1) {
-                    requestAnimationFrame(step);
-                }
-            }
-            requestAnimationFrame(step);
-        }
-        function zoomOnElement(e, svg) {
-            zooming = true;
-            $("#reset").prop("disabled", true);
-            $("#back").prop("disabled", true);
-            let boundingRect;
-            if (e.classList !== undefined && e.classList.length > 0 && e.classList.contains('pin')) {
-                boundingRect = e.getBBox();
-                $("#reset").prop("disabled", false);
-                $("#back").prop("disabled", false);
-                zooming = false;
-                let viewBox = `${boundingRect.x * 0.9999875} ${boundingRect.y * 0.999975} ${boundingRect.width * 3.33} ${boundingRect.height * 3.33}`
-                    svg.children[0].setAttribute(`viewBox`, viewBox);
-            } else {
-                boundingRect = e.Path.getBBox();
-                if (parseInt(e.Element.AdminLevel_Child) > 1) {
-                    $("#reset").prop("disabled", false);
-                    $("#back").prop("disabled", false);
-                    zooming = false;
-                    let viewBox = `${boundingRect.x * resizeVar} ${boundingRect.y * resizeVar * 0.99998375} ${boundingRect.width * 1.08 * resizeVar} ${boundingRect.height * 1.18 * resizeVar}`
-                        svg.children[0].setAttribute(`viewBox`, viewBox);
-                } else {
-                    svg.children[0].setAttribute(`viewBox`, `0 0 ${mapWidth} ${mapHeight}`);
-                    $("#reset").prop("disabled", false);
-                    $("#back").prop("disabled", false);
-                    zooming = false;
-                }
-            }
-        }
-        function resetZoom(svg) {
-            $(container).text('');
-            clicked = [];
-            pinClicked = false
-                let pinsToHide = loadedPins.filter(el => $(el.Path).attr('d') !== '');
-            pinsToHide.forEach((pinToHide) => {
-                $(pinToHide.Path).hide();
-                $(pinToHide.Img).hide();
-            });
-            loadedPins = [];
-            $('#back').hide();
-            jsonLoaded = {
-                CC: '',
-                Id: undefined,
-                jsonData: undefined,
-                Name: ''
-            };
-            txtLoaded = {
-                CC: '',
-                Id: undefined,
-                Name: '',
-                TxtData: undefined
-            };
-            let elsToRemove = global.filter(el2 => parseInt(el2.Element.AdminLevel_Child) > 0 && $(el2.Path).attr('d') !== '');
-            elsToRemove.forEach((elToRemove) => {
-                hidePath(elToRemove.Path);
-            });
-            if (elsToRemove.length > 0) {
-                showPath(global[0].Path, global[0].D);
-                svg.children[0].setAttribute(`viewBox`, `0 0 ${mapWidth} ${mapHeight}`);
-                $('#reset').hide();
-                $('#span').hide();
-            }
-        }
-        function printStats(msg) {
-            if (msg)
-                console.log(msg);
-            console.log("Time:", (end - start || "(Unknown; your browser does not support the Performance API)"), "ms");
-        }
-        $('#reset').on('click', function () {
-            hideLoader();
-            resetZoom($map[0]);
-        });
-        $('#back').on('click', function () {
-            if (clicked.length > 1) {
-                let glob = clicked.at(-1);
-                $(container).text('');
-                pinClicked = false
-                    let pinsToHide = loadedPins.filter(el => el.Element_Id === glob.Element.Id && $(el.Path).attr('d') !== '');
-                pinsToHide.forEach((pinToHide) => {
-                    $(pinToHide.Path).hide();
-                    $(pinToHide.Img).hide();
-                });
-                glob.Children.forEach((child, index) => {
-                    hidePath(child.Path);
-                });
-                let par = clicked.at(-2);
-                par.Children.forEach((child) => {
-                    showPath(child.Path, child.D);
-                });
-                if (par.Parents !== undefined && parseInt(par.Element.AdminLevel_Child) !== 2) {
-                    par.Parents.forEach((pt2) => {
-                        pt2.Children.forEach((child2) => {
-                            showPath(child2.Path, child2.D)
-                        });
-                    });
-                }
-                if (parseInt(glob.Element.AdminLevel_Child) > 1) {
-                    showPath(par.Path, par.D);
-                    zoomOnElement(par, a.target.contentDocument);
-                    hidePath(par.Path);
-                    span.innerHTML = par.Element.Name_Child;
-                } else {
-                    $map[0].children[0].setAttribute(`viewBox`, `0 0 ${mapWidth} ${mapHeight}`);
-                    span.innerHTML = glob.Parents[0].Element.Name_Child;
-                }
-                clicked.splice(clicked.indexOf(glob), 1);
-            } else {
-                resetZoom($map[0]);
-            }
-        });
-        $.getJSON(`${txt1}${txt7}${txt4}`, function ($json) {
-            globalJson = $json;
-            $('#back').hide();
-            globalJson.filter(el => emptyCountries.find(el2 => el2 === el.CountryCode_Child) === undefined).forEach((element, index) => {
-                let path = pathsAsValues.find((path) => {
-                    return path.id === element.Id_Child;
-                });
-                if (path !== undefined) {
-                    global.push({
-                        Element: element,
-                        Path: path,
-                        D: path.attributes[0].value,
-                        Parents: undefined,
-                        Children: []
-                    });
-                    applyStyle(element, path);
-                    if (parseInt(element.AdminLevel_Child) < 0)
-                        hidePath(path);
-                }
-            });
-            global.forEach((element, index) => {
-                addEvListener(element.Path, index);
-            });
-        });
-    });
-})
+document.body.style.zoom="1%";$(function(){$('#span').hide();function orderPins(pins){let auxPins=[];for(let i=0;i<pins.length;i++)
+auxPins.push(pins[i]);auxPins.sort(function(a,b){if(a.Name.toLowerCase()<b.Name.toLowerCase())
+return-1;if(a.Name.toLowerCase()>b.Name.toLowerCase())
+return 1;});return auxPins;}
+function now(){return typeof window.performance!=='undefined'?window.performance.now():0;}
+$('#svg-map').on('load',function(a){const txt1='AuxFiles/',txt2='Continents+Countries',txt3='.txt',txt4='.json',txt5='imgs/',txt6='.png',txt7='Earth+Continents+Countries',txt8='/Pins',txt9='https://storage.googleapis.com/',txtBucket='mappu-bucket'
+$map=$(a.target.contentDocument),$paths=$map.find('path'),pathsAsValues=Object.values($paths).slice(0,1),mapSvg=$map[0].children[0],mapWidth=$map[0].children[0].getBBox().width,mapHeight=$map[0].children[0].getBBox().height,htmlPaths=$map[0].querySelector('svg');let global=[],clicked=[],childrenElements=[],filterElems=[],jsonCountry=[],loaded=[],loadedPins=[],jsonLoaded={CC:'',Id:undefined,JsonData:undefined,Name:''},txtLoaded={CC:'',Id:undefined,Name:'',TxtData:undefined},transContinental=['AM','AZ','CY','EG','GE','ID','KZ','RU','TR'],emptyCountries=['AI','IO','PN','VA'],smallC=['AD','GI','LI','MC','SM','VA'],start,end,globalJson,countryCode='',second='',diffCCode=false,loader=false,progressBar=document.getElementById("progress-bar"),progressValue=document.getElementById("progress-value"),zooming=false,pinClicked=false,containerLoaded=false,resizeVar=60;function buildPathImgs(globEl,foundPin){let strPath='';for(let i=0;i<clicked.length;i++)
+strPath+=clicked[i].Element.Id+'/';strPath+=`${foundPin.Id}${txt6}`;return strPath;}
+function showLoader(){loader=true;$("#reset").prop("disabled",true);$("#back").prop("disabled",true);$("#span").hide();$("#loader").show();$("#progress-bar").show();progressBar.value=0;$("#progress-value").show();progressValue.innerHTML="0%";}
+function hideLoader(){$("#loader").hide();$("#progress-bar").hide();$("#progress-value").hide();$("#reset").prop("disabled",false);$("#back").prop("disabled",false);$("#span").show();if(!zooming){$("#reset").prop("disabled",false);$("#back").prop("disabled",false);}
+loader=false;}
+function binarySearchGlobal(array,targetValue){let min=0,max=array.length-1,guess,guessValue;while(min<=max){guess=Math.floor((max+min)/2);guessValue=parseInt(array[guess].Element.Id);if(guessValue===targetValue)
+return array[guess];else if(guessValue<targetValue)
+min=guess+1;else
+max=guess-1;}
+return-1;}
+function binarySearch(array,targetValue){let min=0,max=array.length-1,guess,guessValue;while(min<=max){guess=Math.floor((max+min)/2);guessValue=array[guess];if(guessValue===targetValue)
+return array[guess];else if(guessValue<targetValue)
+min=guess+1;else
+max=guess-1;}
+return-1;}
+function updateProgressBar(cur,tot){let value=Math.floor(cur*100/tot);if(value>100)
+value=100;progressBar.value=value;progressValue.innerHTML=`${value}%(${cur}/${tot})`;}
+function findCountryCode(element){if(element===undefined)
+return countryCode;if(parseInt(element.Element.AdminLevel_Child)<2)
+return'';if(element.Element.CountryCode_Child!==undefined&&element.Element.CountryCode_Child!==''&&parseInt(element.Element.AdminLevel_Child)===2)
+return element.Element.CountryCode_Child;let parentEl=global.filter(el=>{return el.Element.Id_Child===element.Element.Id_Parent||element.Element.Id_Parent.split(', ').find(el2=>el2===el.Element.Id_Child);});if(parentEl.length>1)
+return findCountryCode(parentEl[parentEl.length-1]);return findCountryCode(parentEl[0]);}
+function bringToTop(targetElement){let parent=targetElement.parentNode;parent.appendChild(targetElement);}
+function applyEvList(globEl,element){function loadPins(){let pinsPath=parseInt(globEl.Element.AdminLevel_Child)>1?`${txt1}${countryCode}${txt8}${txt4}`:`${txt1}${txt8}${txt4}`;$.getJSON(pinsPath,function($pinsFile){if($pinsFile.length>0)
+$pinsFile.forEach((pin)=>{if(!loadedPins.includes(pin)&&parseInt(pin.Element_Id)!==-1)
+loadedPins.push(pin);});}).fail(function(){console.log(`No pins in ${globEl.Element.Name_Child}...`);});}
+if(parseInt(globEl.Element.AdminLevel_Child)>12){span.innerHTML=globEl.Element.Name_Child;return;}
+clicked.forEach((clk)=>{if(parseInt(clk.Element.AdminLevel_Child)>parseInt(globEl.Element.AdminLevel_Child)){loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id).forEach(el=>{$(el.Path).hide();$(el.Img).hide();});clicked.splice(clicked.indexOf(clk,1));}});if(clicked.length===0)
+clicked.push(globEl);else{if(globEl.Element.Id_Child!==clicked.at(-1).Element.Id_Child){pinClicked=false;$(container).text('');loadedPins.forEach(el=>{$(el.Path).hide();$(el.Img).hide();});if(parseInt(globEl.Element.AdminLevel_Child)===parseInt(clicked.at(-1).Element.AdminLevel_Child)){clicked.splice(clicked.indexOf(clicked.at(-1)),1);clicked.push(globEl);}else if(parseInt(globEl.Element.AdminLevel_Child)>parseInt(clicked.at(-1).Element.AdminLevel_Child))
+clicked.push(globEl);}}
+if(parseInt(globEl.Element.AdminLevel_Child)>=0&&$('#back').css('display')==='none')
+$('#back').show();switch(parseInt(globEl.Element.AdminLevel_Child)){case 0:case 1:case 2:case 3:case 4:case 5:case 6:case 7:case 8:case 9:case 10:case 11:case 12:global.filter(el2=>parseInt(el2.Element.AdminLevel_Child)>parseInt(globEl.Element.AdminLevel_Child)&&el2.Element.Id_Parent!==globEl.Element.Id_Parent&&$(el2.Path).attr('d')!==''||parseInt(el2.Element.AdminLevel_Child)<parseInt(globEl.Element.AdminLevel_Child)&&el2.Element.Id_Parent===globEl.Element.Id_Parent).forEach((elem)=>{hidePath(elem.Path);});global.filter(el2=>el2.Element.Id_Parent===globEl.Element.Id_Parent&&parseInt(el2.Element.AdminLevel_Child)>=parseInt(globEl.Element.AdminLevel_Child)&&$(el2.Path).attr('d')===''&&(parseInt(globEl.Element.AdminLevel_Child)!==2)).forEach((elem)=>{showPath(elem.Path,elem.D);});if(childrenElements.length>0){let boundingRect=globEl.Path.getBBox();if(parseInt(globEl.Element.AdminLevel_Child)>1&&boundingRect.width<mapWidth/2&&boundingRect.height<mapHeight/2)
+zoomOnElement(globEl,a.target.contentDocument);hidePath(globEl.Path);}else{hideLoader();span.innerHTML=globEl.Element.Name_Child;let matchingPins=loadedPins.filter(el=>el.Element_Id===clicked.at(-1).Element.Id);if(matchingPins.length>0){let fragment=document.createDocumentFragment();pinClicked=false;matchingPins=orderPins(matchingPins);let sel=document.createElement("select"),optionAux=document.createElement("option");if($('#container').children().length===0){optionAux.value=null;optionAux.text="Please choose an option:";sel.appendChild(optionAux);}
+matchingPins.forEach((foundPin,index)=>{if($('#container').children().length===0){let opt=document.createElement("option");opt.value=foundPin.Id;opt.text=foundPin.Name;sel.appendChild(opt);}
+if(foundPin.Path===undefined){console.log("Pin(s) found!");let pathImgs=buildPathImgs(globEl,foundPin);let pathPin=document.createElementNS("http://www.w3.org/2000/svg","path"),imgPin=document.createElementNS("http://www.w3.org/2000/svg","image");pathPin.setAttributeNS(null,"d",foundPin.D);pathPin.setAttributeNS(null,"id",`pin/${foundPin.Element_Id}-${foundPin.Id}`);pathPin.setAttributeNS(null,"class",`pin`);pathPin.setAttributeNS(null,"name",foundPin.Name);imgPin.setAttributeNS('http://www.w3.org/1999/xlink',"xlink:href",`${txt9}${txtBucket}/${pathImgs}`);imgPin.setAttributeNS(null,"width",foundPin.Width);imgPin.setAttributeNS(null,"height",foundPin.Height);imgPin.setAttributeNS(null,"id",`image/${foundPin.Element_Id}-${foundPin.Id}`);imgPin.setAttributeNS(null,"x",foundPin.X);imgPin.setAttributeNS(null,"y",foundPin.Y);imgPin.setAttributeNS(null,"class","img");pathPin.addEventListener('mouseover',el=>{if(!pinClicked){loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Img).hide();});}});pathPin.addEventListener('mouseout',el=>{if(!pinClicked){loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Img).show();});}});pathPin.addEventListener('click',el=>{if(pinClicked){loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Img).show();});pinClicked=false;}else{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`pin/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Img).hide();});pinClicked=true;}
+$(document).find('select')[0].options.selectedIndex=orderPins(loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id)).indexOf(loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id).find(pin=>el.target.id===`pin/${pin.Element_Id}-${pin.Id}`))+1;zoomOnElement(el.target,a.target.contentDocument);span.innerHTML=`Highlight selected: ${$(pathPin).attr('name')}`;});imgPin.addEventListener('mouseover',el=>{if(!pinClicked){loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Img).hide();});}});imgPin.addEventListener('mouseout',el=>{if(!pinClicked){loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Img).show();});}});imgPin.addEventListener('click',el=>{if(pinClicked){loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).show();$(el2.Img).show();});pinClicked=false;}else{loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&el.target.id!==`image/${pin.Element_Id}-${pin.Id}`).forEach(el2=>{$(el2.Path).hide();$(el2.Img).hide();});pinClicked=true;}
+$(document).find('select')[0].options.selectedIndex=orderPins(loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id)).indexOf(loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id).find(pin=>el.target.id===`image/${pin.Element_Id}-${pin.Id}`))+1;zoomOnElement(pathPin,a.target.contentDocument);span.innerHTML=`Highlight selected: ${$(pathPin).attr('name')}`;});foundPin.Path=pathPin;foundPin.Img=imgPin;fragment.appendChild(pathPin);fragment.appendChild(imgPin);}else{if($(foundPin.Path).css('display')==='none'){$(foundPin.Path).show();$(foundPin.Img).show();}}});if($('#container').children().length===0){let label=document.createElement("label");label.innerHTML="Highlights: "
+$('#container')[0].appendChild(label).appendChild(sel);sel.addEventListener("change",op=>{let selectedPin=orderPins(loadedPins).filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id)[op.target.selectedIndex-1];if(selectedPin.Id!==undefined){loadedPins.filter(pin=>pin.Element_Id===clicked.at(-1).Element.Id&&pin.Id!==selectedPin.Id).forEach(el2=>{$(el2.Path).hide();$(el2.Img).hide();});pinClicked=true;$(selectedPin.Path).show();$(selectedPin.Img).show();zoomOnElement(selectedPin.Path,a.target.contentDocument);span.innerHTML=`Highlight: ${sel.options[op.target.selectedIndex].innerText}`;}});}else
+$(document).find('select')[0].options.selectedIndex=0;htmlPaths.append(fragment);zoomOnElement(globEl,a.target.contentDocument);}else{let par=clicked.at(-2);showPath(par.Path,par.D);zoomOnElement(par,a.target.contentDocument);hidePath(par.Path);}
+return;}
+let elsLoaded=childrenElements.filter(el=>binarySearchGlobal(global,el.Id)!==-1).filter(el=>el.CountryCode_Child===globEl.Element.CountryCode_Child);if(elsLoaded.length>0&&elsLoaded[0].Id_Parent.split(', ').length<1){elsLoaded.forEach((el,index)=>{let pathToShow=binarySearchGlobal(global,el.Id);showPath(pathToShow.Path,pathToShow.D);});if(elsLoaded.length!==childrenElements.length&&elsLoaded.find(fNTC=>transContinental.find(tCont=>tCont!==fNTC.CountryCode_Child)!==undefined))
+alert(`Number of elements loaded from memory is different than number of children! Loaded from memory: ${elsLoaded.length}, number of children(childrenElements.map(childEl => childEl.Id_Child )): ${childrenElements.length}`);hideLoader();span.innerHTML=globEl.Element.Name_Child;}else if(txtLoaded.Id!==undefined&&globEl.Element.CountryCode_Child!==''&&globEl.Element.CountryCode_Child===txtLoaded.CC){let childrenLoaded=[];start=now();const indexes=childrenElements.map(el=>el.Index);function addToDocumentFragment(data,indexes){let fragment=document.createDocumentFragment(),jsonData=indexes.map(item=>jsonCountry[item]).filter(el=>binarySearch(loaded,el.Id)===-1),pathData=indexes.filter(el=>binarySearch(loaded,parseInt(data[el][1]))===-1).map(el=>data[el]);for(let i=0;i<jsonData.length;i++){const path=document.createElementNS("http://www.w3.org/2000/svg","path");path.setAttributeNS(null,"d",pathData[i][0]);path.setAttributeNS(null,"id",jsonData[i].Id_Child);path.setAttributeNS(null,"transform",`scale(${resizeVar}, ${resizeVar})`);applyStyle(jsonData[i],path);fragment.appendChild(path);}
+htmlPaths.append(fragment);end=now();printStats(`Finished creating Paths for ${globEl.Element.Name_Child}!`);}
+addToDocumentFragment(txtLoaded.TxtData,indexes);start=now();for(let i=0;i<indexes.length;i++){let currValues=txtLoaded.TxtData[indexes[i]],[currPath,currId]=[currValues[0],parseInt(currValues[1])],foundChild=childrenElements[i],pathTemp=htmlPaths.children.namedItem(foundChild.Id_Child),globalElem=binarySearchGlobal(global,foundChild.Id);if(globalElem===-1){global.push({Element:foundChild,Path:pathTemp,D:$(pathTemp).attr('d'),Parents:[globEl],Children:[]});globalElem=global.at(-1);globalElem.Parents[0].Children.push(globalElem);}else
+showPath(globalElem.Path,globalElem.D);if(binarySearch(loaded,foundChild.Id)===-1){childrenLoaded.push(foundChild.Id_Child);loaded.push(foundChild.Id);pathsAsValues.push(pathTemp);addEvListener(pathTemp,global.length-1);};updateProgressBar(childrenLoaded.length,childrenElements.length);}
+global=global.sort((a,b)=>a.Element.Id-b.Element.Id);loaded.sort((a,b)=>a-b);end=now();printStats(`Finished creating SVG paths for ${globEl.Element.Name_Child} from data in memory!`);hideLoader();span.innerHTML=globEl.Element.Name_Child;return;}else{let childrenImported=[];let fileToLoad=(parseInt(globEl.Element.AdminLevel_Child)<2)?`${txt1}${txt2}${txt3}`:`${txt1 + countryCode}/${countryCode}${txt3}`;start=now();fetch(fileToLoad).then(response=>response.text()).then(text=>{function addToDocumentFragment(data,indexes){let fragment=document.createDocumentFragment(),jsonData=indexes.map(item=>((parseInt(globEl.Element.AdminLevel_Child)<2)?globalJson:jsonCountry)[item]).filter(el=>binarySearch(loaded,el.Id)===-1),country=+(parseInt(globEl.Element.AdminLevel_Child)<2),pathData=indexes.filter(el=>binarySearch(loaded,parseInt(data[el-country][1]))===-1).map(index=>data[index-country]);for(let i=0;i<jsonData.length;i++){const path=document.createElementNS("http://www.w3.org/2000/svg","path");path.setAttributeNS(null,"d",pathData[i][0]);path.setAttributeNS(null,"id",jsonData[i].Id_Child);path.setAttributeNS(null,"transform",`scale(${resizeVar}, ${resizeVar})`);applyStyle(jsonData[i],path);fragment.appendChild(path);}
+htmlPaths.append(fragment);end=now();printStats(`Finished creating Paths for ${globEl.Element.Name_Child}!`);}
+end=now();printStats(`Finished loading txt for ${globEl.Element.Name_Child}!`);start=now();let parsedData=Papa.parse(text,{delimiter:':'});if(parseInt(globEl.Element.AdminLevel_Child)===2){[txtLoaded.CC,txtLoaded.Id,txtLoaded.Name,txtLoaded.TxtData]=[globEl.Element.CountryCode_Child,globEl.Element.Id,globEl.Element.Name_Child,parsedData.data];[jsonLoaded.CC,jsonLoaded.Id,jsonLoaded.JsonData,jsonLoaded.Name]=[txtLoaded.CC,txtLoaded.Id,jsonCountry,txtLoaded.Name];}
+const indexes=childrenElements.map(el=>el.Index);addToDocumentFragment(parsedData.data,indexes);start=now();for(let i=0;i<indexes.length;i++){let foundChild=childrenElements[i],pathTemp=htmlPaths.children.namedItem(foundChild.Id_Child),globalElem=binarySearchGlobal(global,foundChild.Id);if(globalElem===-1){global.push({Element:foundChild,Path:pathTemp,D:$(pathTemp).attr('d'),Parents:[globEl],Children:[]});globalElem=global.at(-1);globalElem.Parents[0].Children.push(globalElem);}else
+showPath(globalElem.Path,globalElem.D);if(binarySearch(loaded,foundChild.Id)===-1){loaded.push(foundChild.Id);pathsAsValues.push(pathTemp);addEvListener(pathTemp,global.length-1);};childrenImported.push(foundChild.Id_Child);updateProgressBar(childrenImported.length,childrenElements.length);}
+if(globEl.Element.Id===3){bringToTop(htmlPaths.children.namedItem('relation/20'));bringToTop(htmlPaths.children.namedItem('relation/10'));}
+global=global.sort((a,b)=>a.Element.Id-b.Element.Id);loaded.sort((a,b)=>a-b);end=now();printStats(`Finished creating var infos for ${globEl.Element.Name_Child}!`);hideLoader();span.innerHTML=globEl.Element.Name_Child;loadPins();return;}).catch(error=>console.error(error));return;}
+break;default:console.log(`${JSON.stringify(element)}`);}}
+function hidePath(path){$(path).attr('d','');}
+function showPath(path,value){$(path).attr('d',value);}
+function addEvListener(element,index){let globEl=global.at(-1);globEl.Path.addEventListener('click',el=>{function svgPoint(element,x,y){var pt=$map.children()[0].createSVGPoint();pt.x=x;pt.y=y;return pt.matrixTransform(element.getScreenCTM().inverse());}
+var t=el.target;var x=el.clientX;var y=el.clientY;var target=$map.children()[0];var svgP=svgPoint(target,x,y);if(loader)
+return;if(parseInt(globEl.Element.AdminLevel_Child)===0)
+$('#reset').show();$('#span').show();let CC=findCountryCode(globEl);countryCode=(CC!=='')?CC:'undefined';if(parseInt(globEl.Element.AdminLevel_Child)<=1){childrenElements=globEl.Element.ChildrenIndexes.split(", ").map(el=>globalJson[el]);showLoader();applyEvList(globEl,globEl.Path);}else{if(emptyCountries.find(elem=>elem===globEl.Element.CountryCode_Child)===undefined&&globEl.Element.CountryCode_Child!==""){if(jsonLoaded.Id!==undefined&&jsonLoaded.CC===globEl.Element.CC){if(parseInt(globEl.Element.AdminLevel_Child)===2){global.filter(el=>parseInt(el.Element.AdminLevel_Child)<3&&el.Element.Id_Child!==globEl.Element.Id_Child&&$(el.Path).attr('d')!=='').forEach(elem=>hidePath(elem.Path))}
+if(binarySearch(loaded,globEl.Element.Id)===-1){jsonCountry.forEach((element,index)=>{let path=pathsAsValues.find((path)=>{return path.id===element.Id_Child;});if(path!==undefined&&global.find(el=>el.Element.Id_Child===path.id)===undefined)
+global.push({Element:element,Index:index,Path:path,D:(path!==undefined)?pathTargetJQ.attr('d'):undefined,Parents:undefined,Children:[]});});global=global.sort((a,b)=>a.Element.Id-b.Element.Id);}
+childrenElements=(globEl.Element.ChildrenIndexes!=="")?globEl.Element.ChildrenIndexes.split(", ").map(el=>jsonCountry[el]):"";if(childrenElements.length>0)
+showLoader();applyEvList(globEl,globEl.Path);return 0;}else{$.getJSON(`${txt1}${countryCode}/${countryCode}${txt4}`,function($jsonCountry){if(parseInt(globEl.Element.AdminLevel_Child)===2){global.filter(el=>parseInt(el.Element.AdminLevel_Child)<3&&el.Element.Id_Child!==globEl.Element.Id_Child&&$(el.Path).attr('d')!=='').forEach(elem=>hidePath(elem.Path))}
+jsonCountry=$jsonCountry;if(binarySearch(loaded,globEl.Element.Id)===-1){jsonCountry.forEach((element,index)=>{let path=pathsAsValues.find((path)=>{return path.id===element.Id_Child;});if(path!==undefined&&global.find(el=>el.Element.Id_Child===path.id)===undefined){global.push({Element:element,Index:index,Path:path,D:(path!==undefined)?pathTargetJQ.attr('d'):undefined,Parents:undefined,Children:[]});global=global.sort((a,b)=>a.Element.Id-b.Element.Id);}});}
+childrenElements=(globEl.Element.ChildrenIndexes!=="")?globEl.Element.ChildrenIndexes.split(", ").map(el=>jsonCountry[el]):"";if(childrenElements.length>0)
+showLoader();applyEvList(globEl,globEl.Path);return 0;}).always(function(){span.innerHTML=globEl.Element.Name_Child;});}}else
+span.innerHTML=globEl.Element.Name_Child;}});}
+function applyStyle(element,path){if(parseInt(element.AdminLevel_Child)===2&&smallC.find(elem=>elem===element.CountryCode_Child)!==undefined)
+path.classList.add('style-8');else if(parseInt(element.AdminLevel_Child)>=4){switch(countryCode){case'PT':diffCCode=false;switch(element.AdminLevel_Child){case'4':case'6':path.classList.add('style-4');break;case'7':path.classList.add('style-6');break;case'8':path.classList.add('style-7');break;case'10':path.classList.add('style-8');break;default:debugger;}
+break;case'AD':case'GI':case'LI':case'MC':case'SM':diffCCode=false;path.classList.add('style-8');break;case'FR':if(element.CountryCode_Child==='GF'||element.CountryCode_Parent==='NC'||diffCCode){if(!diffCCode)
+diffCCode=true;path.classList.add('style-5');}else{diffCCode=false;path.classList.add(`style-${element.AdminLevel_Child}`);}
+break;default:diffCCode=false;path.classList.add(`style-${element.AdminLevel_Child}`);}}else{diffCCode=false;path.classList.add(`style-${element.AdminLevel_Child}`);}
+return path;}
+function lerp(start,end,t){return start*(1-t)+end*t;}
+function animateZoom(svg,startViewBox,endViewBox,duration){const startTime=performance.now();function step(timestamp){const elapsed=timestamp-startTime;const progress=Math.min(elapsed/duration,1);const currentViewBox=startViewBox.map((val,i)=>lerp(val,endViewBox[i],progress));svg.children[0].setAttribute('viewBox',currentViewBox.join(' '));if(progress<1){requestAnimationFrame(step);}}
+requestAnimationFrame(step);}
+function zoomOnElement(e,svg){zooming=true;$("#reset").prop("disabled",true);$("#back").prop("disabled",true);let boundingRect;if(e.classList!==undefined&&e.classList.length>0&&e.classList.contains('pin')){boundingRect=e.getBBox();$("#reset").prop("disabled",false);$("#back").prop("disabled",false);zooming=false;let viewBox=`${boundingRect.x * 0.9999875} ${boundingRect.y * 0.999975} ${boundingRect.width * 3.33} ${boundingRect.height * 3.33}`
+svg.children[0].setAttribute(`viewBox`,viewBox);}else{boundingRect=e.Path.getBBox();if(parseInt(e.Element.AdminLevel_Child)>1){$("#reset").prop("disabled",false);$("#back").prop("disabled",false);zooming=false;let viewBox=`${boundingRect.x * resizeVar} ${boundingRect.y * resizeVar * 0.99998375} ${boundingRect.width * 1.08 * resizeVar} ${boundingRect.height * 1.18 * resizeVar}`
+svg.children[0].setAttribute(`viewBox`,viewBox);}else{svg.children[0].setAttribute(`viewBox`,`0 0 ${mapWidth} ${mapHeight}`);$("#reset").prop("disabled",false);$("#back").prop("disabled",false);zooming=false;}}}
+function resetZoom(svg){$(container).text('');clicked=[];pinClicked=false
+let pinsToHide=loadedPins.filter(el=>$(el.Path).attr('d')!=='');pinsToHide.forEach((pinToHide)=>{$(pinToHide.Path).hide();$(pinToHide.Img).hide();});loadedPins=[];$('#back').hide();jsonLoaded={CC:'',Id:undefined,jsonData:undefined,Name:''};txtLoaded={CC:'',Id:undefined,Name:'',TxtData:undefined};let elsToRemove=global.filter(el2=>parseInt(el2.Element.AdminLevel_Child)>0&&$(el2.Path).attr('d')!=='');elsToRemove.forEach((elToRemove)=>{hidePath(elToRemove.Path);});if(elsToRemove.length>0){showPath(global[0].Path,global[0].D);svg.children[0].setAttribute(`viewBox`,`0 0 ${mapWidth} ${mapHeight}`);$('#reset').hide();$('#span').hide();}}
+function printStats(msg){if(msg)
+console.log(msg);console.log("Time:",(end-start||"(Unknown; your browser does not support the Performance API)"),"ms");}
+$('#reset').on('click',function(){hideLoader();resetZoom($map[0]);});$('#back').on('click',function(){if(clicked.length>1){let glob=clicked.at(-1);$(container).text('');pinClicked=false
+let pinsToHide=loadedPins.filter(el=>el.Element_Id===glob.Element.Id&&$(el.Path).attr('d')!=='');pinsToHide.forEach((pinToHide)=>{$(pinToHide.Path).hide();$(pinToHide.Img).hide();});glob.Children.forEach((child,index)=>{hidePath(child.Path);});let par=clicked.at(-2);par.Children.forEach((child)=>{showPath(child.Path,child.D);});if(par.Parents!==undefined&&parseInt(par.Element.AdminLevel_Child)!==2){par.Parents.forEach((pt2)=>{pt2.Children.forEach((child2)=>{showPath(child2.Path,child2.D)});});}
+if(parseInt(glob.Element.AdminLevel_Child)>1){showPath(par.Path,par.D);zoomOnElement(par,a.target.contentDocument);hidePath(par.Path);span.innerHTML=par.Element.Name_Child;}else{$map[0].children[0].setAttribute(`viewBox`,`0 0 ${mapWidth} ${mapHeight}`);span.innerHTML=glob.Parents[0].Element.Name_Child;}
+clicked.splice(clicked.indexOf(glob),1);}else{resetZoom($map[0]);}});$.getJSON(`${txt1}${txt7}${txt4}`,function($json){globalJson=$json;$('#back').hide();globalJson.filter(el=>emptyCountries.find(el2=>el2===el.CountryCode_Child)===undefined).forEach((element,index)=>{let path=pathsAsValues.find((path)=>{return path.id===element.Id_Child;});if(path!==undefined){global.push({Element:element,Path:path,D:path.attributes[0].value,Parents:undefined,Children:[]});applyStyle(element,path);if(parseInt(element.AdminLevel_Child)<0)
+hidePath(path);}});global.forEach((element,index)=>{addEvListener(element.Path,index);});});});})
