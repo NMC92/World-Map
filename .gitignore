@@ -1,0 +1,11 @@
+# OS / editor junk only. This repo IS the published site: the geometry under
+# AuxFiles (both <CC>/<CC>.txt and the split <CC>/geom/*.txt) must stay tracked,
+# because GitHub Pages serves it. The workbench ignores AuxFiles/**/*.txt; do not
+# copy that rule here without moving the geometry somewhere else first.
+Thumbs.db
+.DS_Store
+*.bak
+*.swp
+.vscode/
+.idea/
+.tmp-*/
