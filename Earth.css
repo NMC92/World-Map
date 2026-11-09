@@ -45,8 +45,8 @@
 	font-size: 900px;
 	width: 1em;
 	height: 1em;
-	/* A tenth of the box, so the gap scales with the control font at any zoom. */
-	margin: 0 0.1em 0 0;
+	/* Flush: the boxes may touch (no gap is wanted at this scale). */
+	margin: 0;
 	vertical-align: middle;
 	cursor: pointer;
 }
