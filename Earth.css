@@ -41,7 +41,7 @@
  * no label text (their tooltips carry the wording), and form controls do NOT
  * inherit font-size, so give them the 900px font and size the box in em.
  */
-#hide-no-image, #highlights-only {
+#hide-no-image, #highlights-only, #only-no-image {
 	font-size: 900px;
 	width: 1em;
 	height: 1em;
@@ -348,7 +348,7 @@ path {
 		vertical-align: middle;
 		margin: 0 8px 4px 0;
 	}
-	#hide-no-image, #highlights-only {
+	#hide-no-image, #highlights-only, #only-no-image {
 		display: inline-block;
 		font-size: 16px;
 		margin: 4px 12px 4px 0;
