@@ -9,6 +9,9 @@
      <meta http-equiv="X-UA-Compatible" content="IE=edge">
      <meta name="description" content="">
      <meta name="viewport" content="width=device-width, initial-scale=1">
+     <meta name="theme-color" content="#aad3df">
+	 <link rel="manifest" href="manifest.json">
+	 <link rel="apple-touch-icon" href="icon-192.png">
 	 <link rel="shortcut icon" href="#">
 	 <link rel="stylesheet" href="Earth.css">
      <title>Earth</title>
@@ -28,12 +31,19 @@
 		  <br>
 		  <button type="button" id="reset" class="Undefined">Reset</button>
 		  <button type="button" id="back" class="Undefined">Back</button>
+		  <button type="button" id="locate" title="Find me: show where you are and open that parish">Locate</button>
+		  <button type="button" id="gps-follow" aria-pressed="false" title="Follow me: move the view when you enter another parish">Follow: off</button>
 		  <br>
 		  <!-- The three filters sit on one line: a <br> between them would add the
 		       900px control line-height as a visible gap between the boxes. -->
 		  <input type="checkbox" id="hide-no-image" title="Hide pins without pictures" aria-label="Hide pins without pictures"><input type="checkbox" id="highlights-only" title="Highlights only (hide service and institution pins)" aria-label="Highlights only (hide service and institution pins)"><input type="checkbox" id="only-no-image" title="Only pins without pictures (photo backlog)" aria-label="Only pins without pictures (photo backlog)">
 		  <br>
+		  <span id="gps-status" aria-live="polite"></span>
+		  <br>
 		  <span id="container"></span>
+		  <!-- Hidden until a new service worker takes over; see Earth.js. -->
+		  <span id="update-hint" hidden>A new version is ready.</span>
+		  <button type="button" id="reload" hidden>Reload</button>
 		</div>
 	</body>
 </html>

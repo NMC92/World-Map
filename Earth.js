@@ -1,6 +1,12 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-09-picture-only-filter';
+window.__mappuBuild = '2026-11-09-gps-chain-fix';
+
+// The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
+// are in their own module so node can check them: tools/test-gps-frame.mjs. See
+// gps-frame.js for the fit constants and their residuals.
+import { lonLatToXY, accuracyRadius, mapDistanceMetres, ringsOfPath, pointInRings, parishChain } from './gps-frame.js';
+
 let CC = '';
 
 // Where pin images are served from. Empty means "same directory": the workbench
@@ -1691,6 +1697,547 @@ $(function()
 			applyPinFilters();
 		});
 
+		/**
+		 * GPS marker — the "you are here" dot (c1), and the nearest pin (c2).
+		 *
+		 * The dot, the accuracy circle and the parish answer all live in the app's own
+		 * frame: the SVG's viewBox units, the latitude/longitude → X/Y fit of
+		 * gps-frame.js, and the parish outlines the app itself draws. That matters more
+		 * than it sounds — OSM's current boundary sits tens of metres away from the
+		 * stored outline (benchmark-boundary.mjs), so a fresh download would answer a
+		 * different question than the map on screen.
+		 *
+		 * The position never leaves the browser: no request carries it, and the only
+		 * network traffic is the parish data (hierarchy, index, geometry buckets), which
+		 * is public and cached after the first Locate.
+		 *
+		 * The view is moved by dispatching the same clicks a user would make
+		 * (world → continent → country → … → parish), not by setting a viewBox: the app
+		 * owns the zoom, the pin list, the Highlights menu and Back, and a hand-made
+		 * zoom would leave all four behind. Each click is on an SVG path the app already
+		 * registered, so the normal handlers do the work.
+		 *
+		 * Locate works on a secure context only (Pages over https, or 127.0.0.1): that
+		 * is a browser rule, not a choice here.
+		 */
+		const GPS_FOLLOW_KEY = 'mappu.gpsFollow';
+		// The frame is fitted to Portuguese pins, so the parish lookup is PT-only. A
+		// country without pins would need its own fit and its own mapped-parish set.
+		const GPS_COUNTRY = 'PT';
+		// The dot's radius, in viewBox units: ≈ 65 ground metres at this latitude,
+		// a quarter of a pin's 0.2575 width, about 4 screen px at parish zoom.
+		const GPS_DOT_R = 0.1;
+		// The pin record stores the image's top-left corner; the ground point is the
+		// teardrop's tip, a constant offset on the shared template `D`. Measured over
+		// every pin (0.122–0.135 × 0.416–0.445), so the nearest-pin distance carries
+		// ~10 m of slack, which is well inside the frame's own 12 m median residual.
+		const PIN_TIP_DX = 0.130, PIN_TIP_DY = 0.434;
+
+		let gpsFollow = false;
+		try { gpsFollow = window.localStorage.getItem(GPS_FOLLOW_KEY) === '1'; }
+		catch (e) { /* storage can be blocked; keep the default */ }
+		let gpsWatch = null;       // the geolocation watch, once started
+		let gpsFix = null;         // the newest { lat, lon, accuracy }
+		let gpsMarker = null;      // { group, halo, dot } in the SVG document
+		let gpsNavigating = false; // the click chain is running
+		let gpsForceNext = false;  // the next fix should move the view (a Locate press)
+		let gpsParishId = '';     // the parish the view was last sent to
+		let gpsParishes = null;    // promise of the parish index, fetched once
+
+		function gpsStatus(text)
+		{
+			$('#gps-status').text(text);
+		}
+
+		function gpsFollowLabel()
+		{
+			$('#gps-follow').text(gpsFollow ? 'Follow: on' : 'Follow: off')
+				.attr('aria-pressed', gpsFollow ? 'true' : 'false');
+		}
+
+		/** Polls an app state the click path only reaches asynchronously. */
+		function gpsWaitFor(test, what, timeout)
+		{
+			const limit = timeout === undefined ? 20000 : timeout;
+			return new Promise((resolve, reject) =>
+			{
+				const started = now();
+				function probe()
+				{
+					let ready = false;
+					try { ready = test(); }
+					catch (e) { ready = false; }
+					if (ready)
+					{
+						resolve();
+						return;
+					}
+					if (now() - started > limit)
+					{
+						reject(new Error(`timed out waiting for ${what}`));
+						return;
+					}
+					window.setTimeout(probe, 100);
+				}
+				probe();
+			});
+		}
+
+		/**
+		 * Resolves when the app is idle: the loader has been hidden *and* the app's own
+		 * `loader` flag is false (the click handler checks the flag, not the element),
+		 * for a moment, so a click is not dispatched into a load that is still settling.
+		 * Some loads only reveal the loader one round trip after the click, hence the
+		 * quiet window rather than a poll.
+		 */
+		function gpsIdle()
+		{
+			return new Promise(resolve =>
+			{
+				const started = now();
+				let quietSince = null;
+				let warned = false;
+				function probe()
+				{
+					if (loader === false && $('#loader').is(':hidden'))
+					{
+						if (quietSince === null)
+							quietSince = now();
+						if (now() - quietSince > 300)
+						{
+							resolve();
+							return;
+						}
+					}
+					else
+						quietSince = null;
+					// A load that never ends must not hang the navigation silently.
+					if (!warned && now() - started > 45000)
+					{
+						warned = true;
+						console.warn('[gps] the map has looked busy for 45 s; clicking anyway');
+					}
+					window.setTimeout(probe, 100);
+				}
+				probe();
+			});
+		}
+
+		function gpsPath(id)
+		{
+			return $map[0].getElementById(id);
+		}
+
+		function gpsClickPath(id)
+		{
+			const path = gpsPath(id);
+			if (path === null)
+				throw new Error(`no SVG path for ${id}`);
+			const view = $map[0].defaultView;
+			path.dispatchEvent(new view.MouseEvent('click', { bubbles: true, cancelable: true, view }));
+		}
+
+		/**
+		 * One step of the normal click path: click, wait for the app to have opened that
+		 * element (`clicked` ends with it, which happens on the loader-free and the
+		 * loaded branches alike), then waiting for its child to be drawn.
+		 *
+		 * A step is retried once: a click can be swallowed by a load that was still
+		 * settling even after gpsIdle, and the retry is what makes a second Locate on a
+		 * cold tab reliable.
+		 */
+		async function gpsClickStep(id, nextId)
+		{
+			const attempt = async () =>
+			{
+				await gpsIdle();
+				// The path must exist (it need not be visible: a hidden ancestor is
+				// still a click target — the handler, not the paint, does the work).
+				await gpsWaitFor(() => gpsPath(id) !== null, `the map to have ${id}`);
+				const path = gpsPath(id);
+				console.log(`[gps] click ${id}${nextId === undefined ? '' : ' for ' + nextId}`
+					+ ` (path ${path === null ? 'missing' : path.getAttribute('d') === '' ? 'hidden' : 'drawn'},`
+					+ ` loader=${loader}, clicked=${clicked.length ? clicked.map(el => el.Element.Id_Child).join(' > ') : '-'})`);
+				gpsClickPath(id);
+				try
+				{
+					await gpsWaitFor(() => clicked.length > 0
+						&& clicked[clicked.length - 1].Element.Id_Child === id,
+						`the map to open ${id}`, 15000);
+				}
+				catch (error)
+				{
+					console.warn(`[gps] the click on ${id} did not open it; clicked=${clicked.length ? clicked.map(el => el.Element.Id_Child).join(' > ') : '-'}`);
+					throw error;
+				}
+				if (nextId === undefined)
+					return;
+				await gpsWaitFor(() =>
+				{
+					const pathNext = gpsPath(nextId);
+					return pathNext !== null && (pathNext.getAttribute('d') || '') !== '';
+				}, `the map to draw ${nextId}`);
+			};
+			try { await attempt(); }
+			catch (error) { await attempt(); }
+		}
+
+		/**
+		 * The parishes the position is tested against: the mapped region, meaning the
+		 * parishes that have pins. It is the area the frame was fitted to, and their
+		 * outlines are 3 of PT's ~56 geometry buckets rather than the whole country.
+		 *
+		 * Fetched once per page: PT.json (names and the parent chain), the geometry
+		 * index, and Pins.json (which parishes are mapped). The app fetches PT.json and
+		 * Pins.json itself when the country is opened, so the browser serves them from
+		 * its cache the second time.
+		 */
+		function loadGpsParishes()
+		{
+			if (gpsParishes !== null)
+				return gpsParishes;
+			gpsParishes = Promise.all([
+				fetch(`${txt1}${GPS_COUNTRY}/${GPS_COUNTRY}${txt4}`).then(response => response.json()),
+				fetch(`${txt1}${GPS_COUNTRY}/geom/index.json`).then(response => response.json()),
+				fetch(`${txt1}${GPS_COUNTRY}${txt8}${txt4}`).then(response => response.json()),
+			]).then(([country, index, pins]) =>
+			{
+				const byId = new Map(country.map(record => [record.Id_Child, record]));
+				const mapped = [...new Set(pins.map(pin => `relation/${pin.Element_Id}`))];
+				const buckets = [...new Set(mapped
+					.map(id => index.elements[id])
+					.filter(name => name !== undefined))];
+				return Promise.all(buckets.map(name =>
+					fetch(`${txt1}${GPS_COUNTRY}/geom/${name}`).then(response => response.text())
+				)).then(texts =>
+				{
+					const geometry = new Map();
+					for (const text of texts)
+					{
+						for (const line of text.split('\n'))
+						{
+							const cut = line.lastIndexOf(':');
+							if (cut <= 0)
+								continue;
+							geometry.set(line.slice(cut + 1).trim(), line.slice(0, cut));
+						}
+					}
+					const parishes = [];
+					for (const id of mapped)
+					{
+						const record = byId.get(id);
+						const d = geometry.get(id.slice('relation/'.length));
+						if (record === undefined || d === undefined)
+							continue;
+						const rings = ringsOfPath(d, resizeVar);
+						// Bounding-box area, only to break an overlap in favour of the
+						// more specific outline; a loop rather than Math.max(...) because
+						// a detailed parish can carry thousands of vertices.
+						let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+						for (const ring of rings)
+						{
+							for (const [x, y] of ring)
+							{
+								if (x < minX) minX = x;
+								if (x > maxX) maxX = x;
+								if (y < minY) minY = y;
+								if (y > maxY) maxY = y;
+							}
+						}
+						parishes.push({ id, name: record.Name_Child, record, rings, area: (maxX - minX) * (maxY - minY) });
+					}
+					console.log(`[gps] ${parishes.length} mapped parishes from ${buckets.length} geometry buckets`);
+					return { byId, parishes };
+				});
+			}).catch(error =>
+			{
+				// A failed lookup must be retryable: forget the promise, report once.
+				gpsParishes = null;
+				throw error;
+			});
+			return gpsParishes;
+		}
+
+		/** The mapped parish containing { x, y }, or null. Overlaps: the smaller wins. */
+		async function gpsParishAt(x, y)
+		{
+			const data = await loadGpsParishes();
+			let found = null;
+			for (const parish of data.parishes)
+			{
+				if (!pointInRings(x, y, parish.rings))
+					continue;
+				if (found === null || parish.area < found.area)
+					found = parish;
+			}
+			return found;
+		}
+
+		/**
+		 * Move the view to a parish along the normal click path.
+		 *
+		 * Only the steps the app does not already have open are clicked, so going to a
+		 * sibling parish is one click rather than a trip back to the world. The parish
+		 * click needs its pins in memory first: its handler lists them synchronously and
+		 * an empty list opens the parent instead (applyEvList's no-pins branch).
+		 *
+		 * The chain itself (world → continent → country → … → parish) is built by
+		 * parishChain in gps-frame.js, where tools/test-gps-frame.mjs can check it: the
+		 * first version of it here put the continent before the world and left the
+		 * country out, which clicked Europe (a path that only exists after a world
+		 * click) and stalled for the whole timeout.
+		 */
+		async function gpsOpenParish(parish)
+		{
+			console.log(`[gps] opening ${parish.name}: manifest ${Array.isArray(globalJson) ? globalJson.length : 'not loaded'},`
+				+ ` clicked ${clicked.length}, world path ${gpsPath('relation/3') === null ? 'missing' : 'present'}`);
+			await gpsWaitFor(() => Array.isArray(globalJson) && globalJson.length > 0, 'the world manifest');
+			const data = await loadGpsParishes();
+			const chain = parishChain(parish.record, data.byId, globalJson);
+			const parishNumber = parish.id.slice('relation/'.length);
+			const open = clicked.map(element => element.Element.Id_Child);
+			let from = 0;
+			while (from < chain.length && chain[from] === open[from])
+				from++;
+			console.log(`[gps] ${parish.name}: chain ${chain.join(' > ')}, open ${open.length ? open.join(' > ') : '-'}, from ${from}`);
+
+			if (from === chain.length)
+			{
+				const current = global.find(element => element.Element.Id_Child === parish.id);
+				console.log(`[gps] the view is already at ${parish.name}; ${current === undefined ? 'but its path is not registered' : 're-centring'}`);
+				if (current !== undefined)
+					zoomOnElement(current, $map[0]);
+				return;
+			}
+
+			for (let i = from; i < chain.length; i++)
+			{
+				const id = chain[i];
+				const next = chain[i + 1];
+				if (next === undefined)
+				{
+					await gpsWaitFor(
+						() => loadedPins.some(pin => String(pin.Element_Id) === parishNumber),
+						`the pins of ${parish.name}`);
+					await gpsWaitFor(() =>
+					{
+						const path = gpsPath(id);
+						return path !== null && (path.getAttribute('d') || '') !== '';
+					}, `the outline of ${parish.name}`);
+				}
+				await gpsClickStep(id, next);
+				if (next === undefined)
+					return;
+			}
+		}
+
+		/** Draw or move the marker. Re-appended so it stays above later-drawn pins. */
+		function gpsDrawMarker(fix)
+		{
+			if (gpsMarker === null)
+			{
+				const doc = $map[0];
+				const ns = 'http://www.w3.org/2000/svg';
+				const group = doc.createElementNS(ns, 'g');
+				group.setAttribute('id', 'gps-marker');
+				group.setAttribute('pointer-events', 'none');
+				const halo = doc.createElementNS(ns, 'circle');
+				halo.setAttribute('fill', '#1a73e8');
+				halo.setAttribute('fill-opacity', '0.15');
+				halo.setAttribute('stroke', '#1a73e8');
+				halo.setAttribute('stroke-opacity', '0.5');
+				halo.setAttribute('stroke-width', '0.01');
+				const dot = doc.createElementNS(ns, 'circle');
+				dot.setAttribute('fill', '#1a73e8');
+				dot.setAttribute('stroke', '#ffffff');
+				dot.setAttribute('stroke-width', '0.02');
+				group.appendChild(halo);
+				group.appendChild(dot);
+				htmlPaths.appendChild(group);
+				gpsMarker = { group, halo, dot };
+			}
+			const { x, y } = lonLatToXY(fix.lon, fix.lat);
+			// A circle smaller than the dot could not be read; below that the accuracy
+			// is simply "the dot", which is what a map dot means at this zoom anyway.
+			const haloR = Math.max(GPS_DOT_R, accuracyRadius(fix.accuracy, fix.lat));
+			const { dot, halo, group } = gpsMarker;
+			dot.setAttribute('cx', x);
+			dot.setAttribute('cy', y);
+			dot.setAttribute('r', GPS_DOT_R);
+			halo.setAttribute('cx', x);
+			halo.setAttribute('cy', y);
+			halo.setAttribute('r', haloR);
+			htmlPaths.appendChild(group);
+			return { x, y };
+		}
+
+		/**
+		 * The nearest pin of the parish on screen, as text for the status line.
+		 *
+		 * It walks the pins the filters allow, which is the pairing worth having: with
+		 * "only pins without pictures" on, the answer is the nearest place still to
+		 * be photographed. No pin is highlighted — the filters own visibility, and a
+		 * highlight would undo the view the user chose.
+		 */
+		function gpsNearestText(fix, parish)
+		{
+			const current = clicked.length > 0 ? clicked[clicked.length - 1] : undefined;
+			if (current === undefined || String(current.Element.Id) !== parish.id.slice('relation/'.length))
+				return '';
+			const here = lonLatToXY(fix.lon, fix.lat);
+			let best = null, bestMetres = Infinity;
+			for (const pin of pinsForCurrentRegion().filter(pinIsVisible))
+			{
+				const tip = { x: Number(pin.X) + PIN_TIP_DX, y: Number(pin.Y) + PIN_TIP_DY };
+				const metres = mapDistanceMetres(here, tip, fix.lat);
+				if (metres < bestMetres)
+				{
+					bestMetres = metres;
+					best = pin;
+				}
+			}
+			if (best === null)
+				return '';
+			const label = onlyPinsWithoutImages ? 'nearest pin without a picture' : 'nearest pin';
+			const distance = bestMetres < 10 ? 'under 10 m' : `${Math.round(bestMetres)} m`;
+			return ` · ${label}: ${best.Name} (${distance})`;
+		}
+
+		/**
+		 * Act on a fix: draw the dot, answer which parish it is in, and move the view
+		 * there on the first Locate, on every Locate press, and on a parish change while
+		 * Follow is on.
+		 */
+		async function gpsApplyFix(fix)
+		{
+			gpsFix = fix;
+			gpsDrawMarker(fix);
+			const force = gpsForceNext;
+			gpsForceNext = false;
+			gpsStatus('You are here — matching against the parish outlines…');
+			let parish = null;
+			try
+			{
+				const at = lonLatToXY(fix.lon, fix.lat);
+				parish = await gpsParishAt(at.x, at.y);
+			}
+			catch (error)
+			{
+				console.error('[gps] parish lookup failed', error);
+				gpsStatus('You are here, but the parish outlines could not be loaded.');
+				return;
+			}
+			if (parish === null)
+			{
+				gpsParishId = '';
+				gpsStatus('You are here — outside the mapped parishes (the frame is fitted around Cascais and Sintra).');
+				return;
+			}
+			// Name the parish the moment it is known, before the click chain runs: the
+			// chain can take a second or two (the first one also loads the plane), and
+			// the name is the answer that was asked for. The nearest pin is appended
+			// once the view has actually moved.
+			gpsStatus(parish.name);
+			if (gpsNavigating)
+				return;
+			// The first fix opens the view, and so does every Locate press; after that
+			// only Follow does, so a walk through three parishes does not yank the map
+			// away three times.
+			const shouldOpen = force === true
+				|| (parish.id !== gpsParishId && (gpsParishId === '' || gpsFollow));
+			if (shouldOpen)
+			{
+				gpsNavigating = true;
+				try
+				{
+					await gpsOpenParish(parish);
+					gpsParishId = parish.id;
+				}
+				catch (error)
+				{
+					console.error('[gps] could not open', parish.name, error);
+					gpsStatus(`${parish.name} found, but the map could not be opened — press Locate again.`);
+					return;
+				}
+				finally
+				{
+					gpsNavigating = false;
+				}
+			}
+			gpsStatus(`${parish.name}${gpsNearestText(fix, parish)}`);
+		}
+
+		function gpsWatchFailed(error)
+		{
+			const reasons = { 1: 'permission denied', 2: 'position unavailable', 3: 'timed out' };
+			gpsStatus(`Location unavailable: ${reasons[error.code] || error.message || 'unknown error'}`);
+			console.warn('[gps]', error);
+			// Only a denied permission is permanent. A timeout or an "unavailable" is
+			// often transient (the provider was restarting, e.g. after a location
+			// override), and a later fix from the same watch is worth keeping: press
+			// Locate again to restart it and ask for a fresh reading.
+			if (gpsWatch !== null && error.code === 1)
+			{
+				navigator.geolocation.clearWatch(gpsWatch);
+				gpsWatch = null;
+			}
+		}
+
+		function gpsOnPosition(position)
+		{
+			gpsApplyFix({
+				lat: position.coords.latitude,
+				lon: position.coords.longitude,
+				accuracy: position.coords.accuracy,
+			});
+		}
+
+		$('#locate').on('click', function()
+		{
+			if (navigator.geolocation === undefined)
+			{
+				gpsStatus('This browser has no geolocation.');
+				return;
+			}
+			// Browsers expose navigator.geolocation on a plain-http page and then deny
+			// every request, which reads as "permission denied" when the real answer is
+			// "this page is not a secure context". Say the useful thing instead.
+			if (window.isSecureContext === false)
+			{
+				gpsStatus('Location needs a secure page: https, or localhost / 127.0.0.1. This address is plain http.');
+				return;
+			}
+			// Locate means "where am I now", so restart the watch: maximumAge 0 asks for
+			// a fresh reading, which also picks up a DevTools location override that
+			// changed while the old watch was quiet. One request, not two: running
+			// getCurrentPosition alongside the watch made the two race, and a transient
+			// POSITION_UNAVAILABLE on either one reported "Location unavailable" while
+			// the other had just delivered a perfectly good fix.
+			gpsForceNext = true;
+			if (gpsWatch !== null)
+				navigator.geolocation.clearWatch(gpsWatch);
+			gpsStatus('Locating…');
+			gpsWatch = navigator.geolocation.watchPosition(gpsOnPosition, gpsWatchFailed,
+				{ enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+		});
+
+		$('#gps-follow').on('click', function()
+		{
+			gpsFollow = !gpsFollow;
+			gpsFollowLabel();
+			try { window.localStorage.setItem(GPS_FOLLOW_KEY, gpsFollow ? '1' : '0'); }
+			catch (e) { /* storage can be blocked; the toggle still works this session */ }
+			if (gpsFollow && gpsFix !== null && !gpsNavigating)
+				gpsApplyFix(gpsFix);
+		});
+
+		gpsFollowLabel();
+		if (navigator.geolocation === undefined)
+			$('#locate, #gps-follow').prop('disabled', true)
+				.attr('title', 'This browser has no geolocation');
+		else if (window.isSecureContext === false)
+			$('#locate').attr('title', 'Location needs https or localhost — this page is plain http');
+
 		$('#back').on('click', function()
 		{
 			if(clicked.length > 1)
@@ -1981,4 +2528,40 @@ $(function()
 			});
 		});
 	});
+
+	/**
+	 * The offline shell (PWA).
+	 *
+	 * Registered here, outside the SVG load handler: the document itself has to open
+	 * with no connection, and the service worker is what serves it then. The app is
+	 * online-first — sw.js asks the network first and falls back to its cache — so a
+	 * refresh never quietly serves last month's bundle, which this project has already
+	 * paid for twice.
+	 *
+	 * A new worker activates immediately (skipWaiting + clients.claim in sw.js). If it
+	 * replaced one that was already controlling the page, the app says so and offers a
+	 * reload; that is the visible half of the update path.
+	 */
+	if ('serviceWorker' in navigator)
+	{
+		const hadController = navigator.serviceWorker.controller !== null;
+		navigator.serviceWorker.addEventListener('controllerchange', () =>
+		{
+			if (!hadController)
+				return; // first install: nothing to refresh
+			console.log('[mappu] a new service worker took over; reload to run it');
+			const hint = document.getElementById('update-hint');
+			const reload = document.getElementById('reload');
+			if (hint !== null)
+				hint.hidden = false;
+			if (reload !== null)
+			{
+				reload.hidden = false;
+				reload.addEventListener('click', () => window.location.reload());
+			}
+		});
+		navigator.serviceWorker.register('sw.js', { scope: './' })
+			.then(() => console.log('[mappu] offline shell registered'))
+			.catch(error => console.warn('[mappu] offline shell not registered', error));
+	}
 })

@@ -1,0 +1,14 @@
+{
+  "name": "World-Map — Earth",
+  "short_name": "World-Map",
+  "description": "An OpenStreetMap-derived world map with pins for the Cascais–Sintra parishes of Portugal.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#aad3df",
+  "theme_color": "#aad3df",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
