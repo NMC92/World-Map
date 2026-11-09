@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-08-live-port';
+window.__mappuBuild = '2026-11-09-picture-only-filter';
 let CC = '';
 
 // Where pin images are served from. Empty means "same directory": the workbench
@@ -141,6 +141,19 @@ $(function()
 		}
 
 		/**
+		 * "Only pins without pictures" toggle — the photo-hunting view.
+		 *
+		 * The inverse of the toggle above: it shows the backlog and nothing else, so a
+		 * walk through a parish is a list of places still to photograph. It cannot be on
+		 * at the same time as "Hide pins without pictures" — the two views are opposites —
+		 * so ticking one unticks the other. Like the others, the choice is remembered.
+		 */
+		const ONLY_NO_IMAGE_KEY = 'mappu.onlyPinsWithoutImages';
+		let onlyPinsWithoutImages = false;
+		try { onlyPinsWithoutImages = window.localStorage.getItem(ONLY_NO_IMAGE_KEY) === '1'; }
+		catch (e) { /* storage can be blocked; keep the default */ }
+
+		/**
 		 * "Highlights only" toggle.
 		 *
 		 * A pin is a highlight unless its record carries Highlight: false. Only the
@@ -163,6 +176,7 @@ $(function()
 		function pinIsVisible(foundPin)
 		{
 			return (!hidePinsWithoutImages || pinHasImage(foundPin))
+				&& (!onlyPinsWithoutImages || !pinHasImage(foundPin))
 				&& (!highlightsOnly || pinIsHighlight(foundPin));
 		}
 		
@@ -1641,6 +1655,30 @@ $(function()
 			hidePinsWithoutImages = this.checked;
 			try { window.localStorage.setItem(HIDE_NO_IMAGE_KEY, hidePinsWithoutImages ? '1' : '0'); }
 			catch (e) { /* storage can be blocked; the toggle still works this session */ }
+			// The opposite view cannot be on at the same time.
+			if(hidePinsWithoutImages && onlyPinsWithoutImages)
+			{
+				onlyPinsWithoutImages = false;
+				$('#only-no-image').prop('checked', false);
+				try { window.localStorage.setItem(ONLY_NO_IMAGE_KEY, '0'); }
+				catch (e) { /* storage can be blocked; the toggle still works this session */ }
+			}
+			applyPinFilters();
+		});
+
+		$('#only-no-image').prop('checked', onlyPinsWithoutImages);
+		$('#only-no-image').on('change', function()
+		{
+			onlyPinsWithoutImages = this.checked;
+			try { window.localStorage.setItem(ONLY_NO_IMAGE_KEY, onlyPinsWithoutImages ? '1' : '0'); }
+			catch (e) { /* storage can be blocked; the toggle still works this session */ }
+			if(onlyPinsWithoutImages && hidePinsWithoutImages)
+			{
+				hidePinsWithoutImages = false;
+				$('#hide-no-image').prop('checked', false);
+				try { window.localStorage.setItem(HIDE_NO_IMAGE_KEY, '0'); }
+				catch (e) { /* storage can be blocked; the toggle still works this session */ }
+			}
 			applyPinFilters();
 		});
 
