@@ -40,15 +40,42 @@
  * low browser zoom; everything else follows that convention. The checkboxes have
  * no label text (their tooltips carry the wording), and form controls do NOT
  * inherit font-size, so give them the 900px font and size the box in em.
+ *
+ * The box is DRAWN here (appearance: none) instead of using the native widget:
+ * a native checkbox is scaled by the platform into its CSS box, and at this
+ * page's very low zoom that can rasterise one box a pixel shorter than its
+ * neighbours. A CSS box has no such freedom — the painted square is exactly the
+ * 1em layout square, the same for all three, and the tick scales with it.
  */
 #hide-no-image, #highlights-only, #only-no-image {
+	-webkit-appearance: none;
+	appearance: none;
+	box-sizing: border-box;
 	font-size: 900px;
 	width: 1em;
 	height: 1em;
 	/* Flush: the boxes may touch (no gap is wanted at this scale). */
 	margin: 0;
+	border: 0.012em solid #8a8a8a;
+	border-radius: 0.12em;
+	background-color: #fff;
 	vertical-align: middle;
 	cursor: pointer;
+}
+
+#hide-no-image:checked, #highlights-only:checked, #only-no-image:checked {
+	border-color: #1a73e8;
+	background-color: #1a73e8;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23fff' d='M6.1 11.5 2.4 7.8l1.2-1.2 2.5 2.5 5.7-5.7 1.2 1.2z'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 72% 72%;
+}
+
+/* appearance: none drops the native focus ring; keyboard users keep one. */
+#hide-no-image:focus-visible, #highlights-only:focus-visible, #only-no-image:focus-visible {
+	outline: 0.012em solid #1a73e8;
+	outline-offset: 0.02em;
 }
 
 div {
@@ -355,6 +382,9 @@ path {
 		font-size: 16px;
 		margin: 4px 12px 4px 0;
 		vertical-align: middle;
+		/* The em border above is sub-pixel at 16px; use a real one here. */
+		border-width: 1px;
+		border-radius: 3px;
 	}
 	/*
 	 * A native <select> is as wide as its longest option, which would push the
