@@ -28,6 +28,7 @@ const SHELL = [
 	'index.html',
 	'Earth.js',
 	'gps-frame.js',
+	'geometry-fetch.js',
 	'Earth.css',
 	'Earth.svg',
 	'jquery-3.5.1.min.js',
@@ -39,7 +40,9 @@ const SHELL = [
 ];
 const PLANE = new Set([
 	'AuxFiles/Earth+Continents+Countries.json',
+	// The workbench serves the plane plain, the published copy gzipped: both names.
 	'AuxFiles/Continents+Countries.txt',
+	'AuxFiles/Continents+Countries.txt.gz',
 	'AuxFiles/Pins.json',
 ]);
 const SHELL_PREFIX = 'mappu-shell-';
