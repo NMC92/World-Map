@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-10-gps-nearest-line';
+window.__mappuBuild = '2026-11-10-gps-follow-once';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -1746,6 +1746,7 @@ $(function()
 		let gpsNavigating = false; // the click chain is running
 		let gpsForceNext = false;  // the next fix should move the view (a Locate press)
 		let gpsParishId = '';     // the parish the view was last sent to
+		let gpsOpened = false;    // has a fix ever successfully moved the view
 		let gpsParishes = null;    // promise of the parish index, fetched once
 
 		/**
@@ -2153,7 +2154,10 @@ $(function()
 			const where = `${fix.lat.toFixed(4)}, ${fix.lon.toFixed(4)} ±${Math.round(fix.accuracy)} m`;
 			if (parish === null)
 			{
-				gpsParishId = '';
+				// Not resetting gpsParishId here on purpose: this is "outside the mapped
+				// area", not "no navigation happened yet". Resetting it made the view jump
+				// to the next parish entered even with Follow off — e.g. driving out of the
+				// area and back in.
 				console.log(`[gps] fix ${where} -> map ${at.x.toFixed(1)},${at.y.toFixed(1)}: outside the mapped parishes`);
 				gpsStatus(`You are here (${where}) — outside the mapped parishes. The frame is fitted around Cascais and Sintra.`);
 				return;
@@ -2169,11 +2173,11 @@ $(function()
 			gpsStatus(parish.name);
 			if (gpsNavigating)
 				return;
-			// The first fix opens the view, and so does every Locate press; after that
-			// only Follow does, so a walk through three parishes does not yank the map
-			// away three times.
+			// A Locate press always opens the view; before the first successful one, a fix
+			// opens it too (the press may have found nothing at the time); after that only
+			// Follow does, so a walk through three parishes does not yank the map away.
 			const shouldOpen = force === true
-				|| (parish.id !== gpsParishId && (gpsParishId === '' || gpsFollow));
+				|| (parish.id !== gpsParishId && (!gpsOpened || gpsFollow));
 			if (shouldOpen)
 			{
 				gpsNavigating = true;
@@ -2181,6 +2185,7 @@ $(function()
 				{
 					await gpsOpenParish(parish);
 					gpsParishId = parish.id;
+					gpsOpened = true;
 				}
 				catch (error)
 				{
