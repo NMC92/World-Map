@@ -1,11 +1,14 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-09-gps-chain-fix';
+window.__mappuBuild = '2026-11-09-gzip-geometry';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
 // gps-frame.js for the fit constants and their residuals.
 import { lonLatToXY, accuracyRadius, mapDistanceMetres, ringsOfPath, pointInRings, parishChain } from './gps-frame.js';
+// Geometry is gzipped on the published site (the site has to stay under 1 GB) and
+// plain in the workbench; this asks for the .gz and falls back.
+import { fetchGeometryText } from './geometry-fetch.js';
 
 let CC = '';
 
@@ -1087,8 +1090,9 @@ $(function()
 						function loadLegacyWholeCountryFile()
 						{
 						start = now();
-						fetch(fileToLoad)
-						.then(response => response.text())
+						// Geometry is gzipped in the published copy and plain in the
+						// workbench; fetchGeometryText asks for the .gz and falls back.
+						fetchGeometryText(fileToLoad)
 						.then(text =>
 						{
 							end = now();
@@ -1908,7 +1912,7 @@ $(function()
 					.map(id => index.elements[id])
 					.filter(name => name !== undefined))];
 				return Promise.all(buckets.map(name =>
-					fetch(`${txt1}${GPS_COUNTRY}/geom/${name}`).then(response => response.text())
+					fetchGeometryText(`${txt1}${GPS_COUNTRY}/geom/${name}`)
 				)).then(texts =>
 				{
 					const geometry = new Map();
@@ -2406,7 +2410,7 @@ $(function()
 				)].filter(name => cache.files[name] === undefined);
 
 				return Promise.all(files.map(name =>
-					fetch(`${txt1}${countryCode}/geom/${name}`).then(response => response.text())
+					fetchGeometryText(`${txt1}${countryCode}/geom/${name}`)
 				))
 				.then(texts =>
 				{
