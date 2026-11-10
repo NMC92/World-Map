@@ -33,13 +33,14 @@
 		  <button type="button" id="back" class="Undefined">Back</button>
 		  <button type="button" id="locate" title="Find me: show where you are and open that parish">Locate</button>
 		  <button type="button" id="gps-follow" aria-pressed="false" title="Follow me: move the view when you enter another parish">Follow: off</button>
-		  <br>
 		  <!-- The three filters sit on one line: a <br> between them would add the
-		       900px control line-height as a visible gap between the boxes. -->
-		  <input type="checkbox" id="hide-no-image" title="Hide pins without pictures" aria-label="Hide pins without pictures"><input type="checkbox" id="highlights-only" title="Highlights only (hide service and institution pins)" aria-label="Highlights only (hide service and institution pins)"><input type="checkbox" id="only-no-image" title="Only pins without pictures (photo backlog)" aria-label="Only pins without pictures (photo backlog)">
-		  <br>
-		  <span id="gps-status" aria-live="polite"></span>
-		  <br>
+		       900px control line-height as a visible gap between the boxes. The
+		       wrapper is a block, not a <br>, because the stylesheet hides this row's
+		       <br>s on a phone — and then the boxes would share the button line. -->
+		  <div><input type="checkbox" id="hide-no-image" title="Hide pins without pictures" aria-label="Hide pins without pictures"><input type="checkbox" id="highlights-only" title="Highlights only (hide service and institution pins)" aria-label="Highlights only (hide service and institution pins)"><input type="checkbox" id="only-no-image" title="Only pins without pictures (photo backlog)" aria-label="Only pins without pictures (photo backlog)"></div>
+		  <!-- The same for the status line: its own block, so it never continues the
+		       checkbox row on a phone. -->
+		  <div><span id="gps-status" aria-live="polite"></span></div>
 		  <span id="container"></span>
 		  <!-- Hidden until a new service worker takes over; see Earth.js. -->
 		  <span id="update-hint" hidden>A new version is ready.</span>
