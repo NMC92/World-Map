@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-09-gzip-geometry';
+window.__mappuBuild = '2026-11-10-gps-fix-report';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -2120,9 +2120,10 @@ $(function()
 			gpsForceNext = false;
 			gpsStatus('You are here — matching against the parish outlines…');
 			let parish = null;
+			let at = null;
 			try
 			{
-				const at = lonLatToXY(fix.lon, fix.lat);
+				at = lonLatToXY(fix.lon, fix.lat);
 				parish = await gpsParishAt(at.x, at.y);
 			}
 			catch (error)
@@ -2131,12 +2132,23 @@ $(function()
 				gpsStatus('You are here, but the parish outlines could not be loaded.');
 				return;
 			}
+			// Say WHERE the fix landed and how precise it is. There are two very
+			// different reasons to be outside: the position is somewhere else in the
+			// country (a desktop's network location can be a city away) or it is close
+			// but the parish has no pins, and the frame is only fitted where pins exist.
+			// Without the numbers neither is distinguishable.
+			const where = `${fix.lat.toFixed(4)}, ${fix.lon.toFixed(4)} ±${Math.round(fix.accuracy)} m`;
 			if (parish === null)
 			{
 				gpsParishId = '';
-				gpsStatus('You are here — outside the mapped parishes (the frame is fitted around Cascais and Sintra).');
+				console.log(`[gps] fix ${where} -> map ${at.x.toFixed(1)},${at.y.toFixed(1)}: outside the mapped parishes`);
+				gpsStatus(`You are here (${where}) — outside the mapped parishes. The frame is fitted around Cascais and Sintra.`);
 				return;
 			}
+			// One line per parish change, not per fix: a watch can deliver fixes every
+			// second, and this is the line that makes a phone test readable.
+			if (parish.id !== gpsParishId)
+				console.log(`[gps] fix ${where} -> ${parish.name}`);
 			// Name the parish the moment it is known, before the click chain runs: the
 			// chain can take a second or two (the first one also loads the plane), and
 			// the name is the answer that was asked for. The nearest pin is appended
