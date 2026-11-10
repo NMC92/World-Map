@@ -39,8 +39,10 @@
 		       <br>s on a phone — and then the boxes would share the button line. -->
 		  <div><input type="checkbox" id="hide-no-image" title="Hide pins without pictures" aria-label="Hide pins without pictures"><input type="checkbox" id="highlights-only" title="Highlights only (hide service and institution pins)" aria-label="Highlights only (hide service and institution pins)"><input type="checkbox" id="only-no-image" title="Only pins without pictures (photo backlog)" aria-label="Only pins without pictures (photo backlog)"></div>
 		  <!-- The same for the status line: its own block, so it never continues the
-		       checkbox row on a phone. -->
+		       checkbox row on a phone. The nearest-pin line is a second block under it
+		       (see gpsStatus); empty, it takes no space. -->
 		  <div><span id="gps-status" aria-live="polite"></span></div>
+		  <div><span id="gps-nearest" aria-live="polite"></span></div>
 		  <span id="container"></span>
 		  <!-- Hidden until a new service worker takes over; see Earth.js. -->
 		  <span id="update-hint" hidden>A new version is ready.</span>

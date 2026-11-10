@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-10-gps-fix-report';
+window.__mappuBuild = '2026-11-10-gps-nearest-line';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -1748,9 +1748,17 @@ $(function()
 		let gpsParishId = '';     // the parish the view was last sent to
 		let gpsParishes = null;    // promise of the parish index, fetched once
 
-		function gpsStatus(text)
+		/**
+		 * The status area: one line of text, and an optional second line under it.
+		 *
+		 * The nearest pin is the second line so a long pin name never pushes the parish
+		 * label off the row. Every other caller passes text only, which clears the
+		 * second line — otherwise "Locating…" or an error would sit above a stale pin.
+		 */
+		function gpsStatus(text, nearest)
 		{
 			$('#gps-status').text(text);
+			$('#gps-nearest').text(nearest === undefined || nearest === null ? '' : nearest);
 		}
 
 		function gpsFollowLabel()
@@ -2076,7 +2084,12 @@ $(function()
 		}
 
 		/**
-		 * The nearest pin of the parish on screen, as text for the status line.
+		 * The nearest pin of the parish on screen, as the two parts of the status area.
+		 *
+		 * Returns `{ label, name }`, or null when there is nothing to name. The label
+		 * ("nearest pin:") stays on the parish's line and the pin goes on its own line
+		 * below it — see gpsStatus — because a long name and a long label on one line
+		 * push each other off the row on a phone.
 		 *
 		 * It walks the pins the filters allow, which is the pairing worth having: with
 		 * "only pins without pictures" on, the answer is the nearest place still to
@@ -2087,7 +2100,7 @@ $(function()
 		{
 			const current = clicked.length > 0 ? clicked[clicked.length - 1] : undefined;
 			if (current === undefined || String(current.Element.Id) !== parish.id.slice('relation/'.length))
-				return '';
+				return null;
 			const here = lonLatToXY(fix.lon, fix.lat);
 			let best = null, bestMetres = Infinity;
 			for (const pin of pinsForCurrentRegion().filter(pinIsVisible))
@@ -2101,10 +2114,10 @@ $(function()
 				}
 			}
 			if (best === null)
-				return '';
+				return null;
 			const label = onlyPinsWithoutImages ? 'nearest pin without a picture' : 'nearest pin';
 			const distance = bestMetres < 10 ? 'under 10 m' : `${Math.round(bestMetres)} m`;
-			return ` · ${label}: ${best.Name} (${distance})`;
+			return { label, name: `${best.Name} (${distance})` };
 		}
 
 		/**
@@ -2180,7 +2193,9 @@ $(function()
 					gpsNavigating = false;
 				}
 			}
-			gpsStatus(`${parish.name}${gpsNearestText(fix, parish)}`);
+			const nearest = gpsNearestText(fix, parish);
+			gpsStatus(nearest === null ? parish.name : `${parish.name} · ${nearest.label}:`,
+				nearest === null ? '' : nearest.name);
 		}
 
 		function gpsWatchFailed(error)
