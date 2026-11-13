@@ -15,7 +15,7 @@ let CC = '';
 // Where pin images are served from. Empty means "same directory": the workbench
 // keeps AuxFiles/imgs/ on disk. The published copy sets the bucket root, whose
 // keys are the same paths without the AuxFiles/imgs/ prefix.
-const IMG_ROOT = '';
+const IMG_ROOT = 'https://storage.googleapis.com/bucket-wm8/';
 
 $(function()
 {
