@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-13-locate-parish-1';
+window.__mappuBuild = '2026-11-13-locate-parish-2';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -2258,16 +2258,6 @@ $(function()
 					await gpsOpenParish(parish);
 					gpsParishId = parish.id;
 					gpsOpened = true;
-					// The app's no-pins branch steps back to the parent municipality
-					// after the parish click. GPS asked for the smallest unit, not its
-					// parent, so fit the parish outline the chain just drew. The name
-					// above is already the parish; only the view needed correcting.
-					if (pinsForCurrentRegion().length === 0)
-					{
-						const current = global.find(element => element.Element.Id_Child === parish.id);
-						if (current !== undefined)
-							zoomOnElement(current, $map[0]);
-					}
 				}
 				catch (error)
 				{
@@ -2281,7 +2271,11 @@ $(function()
 					gpsRaiseMarker();
 				}
 			}
-			const nearest = gpsNearestText(fix, parish);
+			// The click chain can take seconds on a first open, and newer fixes kept
+			// arriving while it ran (each one updated the dot and then returned at the
+			// gpsNavigating guard above). Use the latest fix, not the one that started
+			// the chain, or the nearest pin can name a place already passed.
+			const nearest = gpsNearestText(gpsFix ?? fix, parish);
 			gpsStatus(nearest === null ? parish.name : `${parish.name} · ${nearest.label}:`,
 				nearest === null ? '' : nearest.name);
 		}
