@@ -10,9 +10,11 @@
 // to ~0.38 GB. The workbench keeps the plain files, because tools/build-geometry,
 // validate-data, pilot-preview and benchmark-boundary read them directly.
 //
-// Hence: ask for .gz, fall back to the plain path. That costs one 404 per geometry
-// file in the workbench and avoids a configuration line that could drift between
-// the two copies (see MANUAL-TESTS.md: the .gz 404s are expected locally).
+// Hence: ask for .gz, fall back to the plain path. A plain static server would log
+// one 404 per geometry file in the workbench; the app itself has no configuration
+// line to drift. tools/serve.mjs answers the missing .gz by gzipping the plain file
+// on the fly, so the local console stays clean and the app still takes the same
+// DecompressionStream path as on the published site.
 //
 // Decompression is the platform's own: DecompressionStream('gzip') — Chrome and Edge
 // 80+, Safari 16.4+, Firefox 113+. No library, and the compressed bytes are handled

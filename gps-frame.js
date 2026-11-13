@@ -43,8 +43,12 @@
 //   is exactly the noise the strict rule removes.
 //
 // NOT VERIFIED: how far this extrapolates beyond the Cascais–Sintra region the
-// pairs span (~25 km). Treat the marker as "which street/parish", not a survey
-// instrument. A country without pins would need its own fit.
+// pairs span (~25 km). The parish lookup now covers all 3,119 Portuguese level-8
+// parishes, so a fix anywhere in the country gets an answer, but away from the
+// fitted region that answer comes from the same linear Mercator assumed, not
+// measured: it can be a parish (or two) out at the far end of the country. Treat
+// the marker as "which street/parish on this map", not a survey instrument, and do
+// not extend it to another country without its own fit.
 export const R = 6378137;
 
 export const FRAME = Object.freeze({
@@ -181,6 +185,47 @@ export function ringsOfPath(d, scale = 1) {
 	if (ring !== null)
 		rings.push(ring);
 	return scale === 1 ? rings : rings.map(ring2 => ring2.map(([px, py]) => [px * scale, py * scale]));
+}
+
+/**
+ * The bounding box of a set of rings, as [minX, minY, maxX, maxY].
+ *
+ * Used by tools/build-pt-bbox.mjs to write the shortlist index, and by the tests to
+ * check that index against the outline it describes. The app compares against these
+ * boxes in the stored (raw) units — before the scale(resizeVar) transform — so a fix
+ * is divided by the scale before the lookup. A bbox is deliberately conservative: it
+ * can only add candidates, and pointInRings makes the actual decision.
+ */
+export function bboxOfRings(rings) {
+	let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+	for (const ring of rings)
+		for (const [x, y] of ring)
+		{
+			if (x < minX) minX = x;
+			if (x > maxX) maxX = x;
+			if (y < minY) minY = y;
+			if (y > maxY) maxY = y;
+		}
+	return [minX, minY, maxX, maxY];
+}
+
+/**
+ * The ids whose bbox contains a point, as an array of the index's own keys.
+ *
+ * `bboxes` is the `parishes` object of AuxFiles/PT/geom/bbox.json: numeric relation
+ * id → [minX, minY, maxX, maxY] in raw map units. A fix in drawn viewBox units comes
+ * in as x / resizeVar, y / resizeVar. No vertex is read here: the caller fetches
+ * only the bucket(s) that hold these ids.
+ */
+export function shortlistByBbox(x, y, bboxes) {
+	const hits = [];
+	for (const id in bboxes)
+	{
+		const box = bboxes[id];
+		if (x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3])
+			hits.push(id);
+	}
+	return hits;
 }
 
 /**

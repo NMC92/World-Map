@@ -1,11 +1,11 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-10-gps-follow-once';
+window.__mappuBuild = '2026-11-13-locate-parish-1';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
 // gps-frame.js for the fit constants and their residuals.
-import { lonLatToXY, accuracyRadius, mapDistanceMetres, ringsOfPath, pointInRings, parishChain } from './gps-frame.js';
+import { lonLatToXY, accuracyRadius, mapDistanceMetres, ringsOfPath, pointInRings, parishChain, shortlistByBbox } from './gps-frame.js';
 // Geometry is gzipped on the published site (the site has to stay under 1 GB) and
 // plain in the workbench; this asks for the .gz and falls back.
 import { fetchGeometryText } from './geometry-fetch.js';
@@ -15,7 +15,7 @@ let CC = '';
 // Where pin images are served from. Empty means "same directory": the workbench
 // keeps AuxFiles/imgs/ on disk. The published copy sets the bucket root, whose
 // keys are the same paths without the AuxFiles/imgs/ prefix.
-const IMG_ROOT = 'https://storage.googleapis.com/bucket-wm8/';
+const IMG_ROOT = '';
 
 $(function()
 {
@@ -540,6 +540,12 @@ $(function()
 			span.innerHTML = `Highlight selected: ${keepPin.Name}`;
 		}
 		
+		// Countries whose pin file request has settled (success or failure). The GPS
+		// click path needs this to know that the app has listed every pin it will ever
+		// have for PT: clicking a parish before that would take the no-pins branch and
+		// show the municipality even for a parish that has pins.
+		const pinsLoadedFor = new Set();
+
 		/**
 		 * Load the pins for the region currently being shown.
 		 *
@@ -583,6 +589,10 @@ $(function()
 			.fail(function()
 			{
 				console.log(`No pins in ${globEl.Element.Name_Child}...`);
+			})
+			.always(function()
+			{
+				pinsLoadedFor.add(globEl.Element.CountryCode_Child || '');
 			});
 		}
 
@@ -1578,6 +1588,9 @@ $(function()
 				$(pinToHide.Img).hide();
 			});
 			loadedPins = [];
+			// The pin file must be fetched again after a reset, so the GPS click path
+			// cannot treat the old completion as still valid.
+			pinsLoadedFor.clear();
 			$('#back').hide();
 			jsonLoaded = {CC: '', Id: undefined, jsonData: undefined, Name: ''};
 			txtLoaded = {CC: '', Id: undefined, Name: '', TxtData: undefined};
@@ -1711,9 +1724,18 @@ $(function()
 		 * stored outline (benchmark-boundary.mjs), so a fresh download would answer a
 		 * different question than the map on screen.
 		 *
+		 * The answer covers every one of PT's 3,119 level-8 parishes, not just the 31
+		 * with pins: a bbox index (AuxFiles/PT/geom/bbox.json, built by
+		 * tools/build-pt-bbox.mjs) shortlists the candidates, and only the geometry
+		 * bucket holding them is fetched. The frame itself was fitted around
+		 * Cascais–Sintra and is only extrapolated elsewhere — see the caveat in
+		 * gps-frame.js. An unpinned parish needs no special case here: clicking it
+		 * takes the app's own no-pins branch, which shows its parent municipality.
+		 *
 		 * The position never leaves the browser: no request carries it, and the only
-		 * network traffic is the parish data (hierarchy, index, geometry buckets), which
-		 * is public and cached after the first Locate.
+		 * network traffic is the parish data (hierarchy, index, bbox index, the
+		 * geometry buckets a fix falls in), which is public and cached after the first
+		 * Locate.
 		 *
 		 * The view is moved by dispatching the same clicks a user would make
 		 * (world → continent → country → … → parish), not by setting a viewBox: the app
@@ -1726,7 +1748,7 @@ $(function()
 		 */
 		const GPS_FOLLOW_KEY = 'mappu.gpsFollow';
 		// The frame is fitted to Portuguese pins, so the parish lookup is PT-only. A
-		// country without pins would need its own fit and its own mapped-parish set.
+		// country without pins would need its own fit and its own parish index.
 		const GPS_COUNTRY = 'PT';
 		// The dot's radius, in viewBox units: ≈ 65 ground metres at this latitude,
 		// a quarter of a pin's 0.2575 width, about 4 screen px at parish zoom.
@@ -1747,7 +1769,8 @@ $(function()
 		let gpsForceNext = false;  // the next fix should move the view (a Locate press)
 		let gpsParishId = '';     // the parish the view was last sent to
 		let gpsOpened = false;    // has a fix ever successfully moved the view
-		let gpsParishes = null;    // promise of the parish index, fetched once
+		let gpsParishes = null;    // promise of the country/bbox index, fetched once
+		let gpsBuckets = new Map(); // bucket name -> promise of { numericId -> path }
 
 		/**
 		 * The status area: one line of text, and an optional second line under it.
@@ -1896,14 +1919,19 @@ $(function()
 		}
 
 		/**
-		 * The parishes the position is tested against: the mapped region, meaning the
-		 * parishes that have pins. It is the area the frame was fitted to, and their
-		 * outlines are 3 of PT's ~56 geometry buckets rather than the whole country.
+		 * PT's parish index: every level-8 parish's name and parent chain (PT.json),
+		 * which bucket its outline lives in (geom/index.json), and one bbox per parish
+		 * (geom/bbox.json, written by tools/build-pt-bbox.mjs).
 		 *
-		 * Fetched once per page: PT.json (names and the parent chain), the geometry
-		 * index, and Pins.json (which parishes are mapped). The app fetches PT.json and
-		 * Pins.json itself when the country is opened, so the browser serves them from
-		 * its cache the second time.
+		 * This used to hold only the 31 parishes that have pins, because their outlines
+		 * were the only ones the app had loaded. The bbox index makes every PT parish
+		 * answerable: shortlist by bbox, then fetch just the bucket(s) the shortlist
+		 * falls in. Pins.json is no longer needed here; its only use was the old mapped
+		 * set.
+		 *
+		 * Fetched once per page: ~1 MB PT.json, ~110 KB index, ~230 KB bbox index. The
+		 * app fetches PT.json itself when the country is opened, so the browser serves
+		 * it from its cache the second time.
 		 */
 		function loadGpsParishes()
 		{
@@ -1912,56 +1940,12 @@ $(function()
 			gpsParishes = Promise.all([
 				fetch(`${txt1}${GPS_COUNTRY}/${GPS_COUNTRY}${txt4}`).then(response => response.json()),
 				fetch(`${txt1}${GPS_COUNTRY}/geom/index.json`).then(response => response.json()),
-				fetch(`${txt1}${GPS_COUNTRY}${txt8}${txt4}`).then(response => response.json()),
-			]).then(([country, index, pins]) =>
+				fetch(`${txt1}${GPS_COUNTRY}/geom/bbox.json`).then(response => response.json()),
+			]).then(([country, index, bbox]) =>
 			{
 				const byId = new Map(country.map(record => [record.Id_Child, record]));
-				const mapped = [...new Set(pins.map(pin => `relation/${pin.Element_Id}`))];
-				const buckets = [...new Set(mapped
-					.map(id => index.elements[id])
-					.filter(name => name !== undefined))];
-				return Promise.all(buckets.map(name =>
-					fetchGeometryText(`${txt1}${GPS_COUNTRY}/geom/${name}`)
-				)).then(texts =>
-				{
-					const geometry = new Map();
-					for (const text of texts)
-					{
-						for (const line of text.split('\n'))
-						{
-							const cut = line.lastIndexOf(':');
-							if (cut <= 0)
-								continue;
-							geometry.set(line.slice(cut + 1).trim(), line.slice(0, cut));
-						}
-					}
-					const parishes = [];
-					for (const id of mapped)
-					{
-						const record = byId.get(id);
-						const d = geometry.get(id.slice('relation/'.length));
-						if (record === undefined || d === undefined)
-							continue;
-						const rings = ringsOfPath(d, resizeVar);
-						// Bounding-box area, only to break an overlap in favour of the
-						// more specific outline; a loop rather than Math.max(...) because
-						// a detailed parish can carry thousands of vertices.
-						let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-						for (const ring of rings)
-						{
-							for (const [x, y] of ring)
-							{
-								if (x < minX) minX = x;
-								if (x > maxX) maxX = x;
-								if (y < minY) minY = y;
-								if (y > maxY) maxY = y;
-							}
-						}
-						parishes.push({ id, name: record.Name_Child, record, rings, area: (maxX - minX) * (maxY - minY) });
-					}
-					console.log(`[gps] ${parishes.length} mapped parishes from ${buckets.length} geometry buckets`);
-					return { byId, parishes };
-				});
+				console.log(`[gps] ${Object.keys(bbox.parishes).length} level-8 parishes in the bbox index`);
+				return { byId, index, bboxes: bbox.parishes };
 			}).catch(error =>
 			{
 				// A failed lookup must be retryable: forget the promise, report once.
@@ -1971,17 +1955,86 @@ $(function()
 			return gpsParishes;
 		}
 
-		/** The mapped parish containing { x, y }, or null. Overlaps: the smaller wins. */
+		/**
+		 * One geometry bucket, parsed once: numeric relation id → geometry string.
+		 *
+		 * Only the buckets a fix falls in are fetched (a bucket is ~128 KB, the whole
+		 * country is ~7 MB). The parsed rows are kept: Follow can deliver a fix every
+		 * second, and a walk within one municipality must not re-parse its bucket.
+		 */
+		function gpsBucket(name)
+		{
+			if (!gpsBuckets.has(name))
+			{
+				gpsBuckets.set(name, fetchGeometryText(`${txt1}${GPS_COUNTRY}/geom/${name}`)
+					.then(text =>
+					{
+						const rows = new Map();
+						for (const line of text.split('\n'))
+						{
+							const cut = line.lastIndexOf(':');
+							if (cut > 0)
+								rows.set(line.slice(cut + 1).trim(), line.slice(0, cut));
+						}
+						console.log(`[gps] geometry bucket ${name} (${rows.size} outlines)`);
+						return rows;
+					})
+					.catch(error =>
+					{
+						// Keep a failed fetch retryable, like the index above.
+						gpsBuckets.delete(name);
+						throw error;
+					}));
+			}
+			return gpsBuckets.get(name);
+		}
+
+		/**
+		 * The level-8 parish containing { x, y } in viewBox units, or null.
+		 *
+		 * The bbox index shortlists in the stored (raw) units — the fix is divided by
+		 * the app's scale — then only the buckets those candidates live in are fetched,
+		 * and only the candidate outlines are tested. Overlaps resolve to the smaller
+		 * bbox, as before.
+		 */
 		async function gpsParishAt(x, y)
 		{
 			const data = await loadGpsParishes();
-			let found = null;
-			for (const parish of data.parishes)
+			const shortlist = shortlistByBbox(x / resizeVar, y / resizeVar, data.bboxes);
+			if (shortlist.length === 0)
+				return null;
+			const byBucket = new Map();
+			for (const number of shortlist)
 			{
-				if (!pointInRings(x, y, parish.rings))
+				const name = data.index.elements[`relation/${number}`];
+				if (name === undefined)
 					continue;
-				if (found === null || parish.area < found.area)
-					found = parish;
+				if (!byBucket.has(name))
+					byBucket.set(name, []);
+				byBucket.get(name).push(number);
+			}
+			const geometryOf = new Map(await Promise.all(
+				[...byBucket.keys()].map(async name => [name, await gpsBucket(name)])));
+			let found = null;
+			for (const [name, numbers] of byBucket)
+			{
+				const geometry = geometryOf.get(name);
+				for (const number of numbers)
+				{
+					const d = geometry.get(number);
+					if (d === undefined)
+						continue;
+					const rings = ringsOfPath(d, resizeVar);
+					if (!pointInRings(x, y, rings))
+						continue;
+					const record = data.byId.get(`relation/${number}`);
+					if (record === undefined)
+						continue;
+					const box = data.bboxes[number];
+					const area = (box[2] - box[0]) * (box[3] - box[1]);
+					if (found === null || area < found.area)
+						found = { id: `relation/${number}`, name: record.Name_Child, record, rings, area };
+				}
 			}
 			return found;
 		}
@@ -1991,8 +2044,10 @@ $(function()
 		 *
 		 * Only the steps the app does not already have open are clicked, so going to a
 		 * sibling parish is one click rather than a trip back to the world. The parish
-		 * click needs its pins in memory first: its handler lists them synchronously and
-		 * an empty list opens the parent instead (applyEvList's no-pins branch).
+		 * click needs the country's pins in memory first: its handler lists them
+		 * synchronously, and an empty list takes applyEvList's no-pins branch (which is
+		 * the desired view for the 3,088 parishes that have no pins, but the wrong one
+		 * for a parish whose pins merely have not arrived yet).
 		 *
 		 * The chain itself (world → continent → country → … → parish) is built by
 		 * parishChain in gps-frame.js, where tools/test-gps-frame.mjs can check it: the
@@ -2007,7 +2062,6 @@ $(function()
 			await gpsWaitFor(() => Array.isArray(globalJson) && globalJson.length > 0, 'the world manifest');
 			const data = await loadGpsParishes();
 			const chain = parishChain(parish.record, data.byId, globalJson);
-			const parishNumber = parish.id.slice('relation/'.length);
 			const open = clicked.map(element => element.Element.Id_Child);
 			let from = 0;
 			while (from < chain.length && chain[from] === open[from])
@@ -2030,8 +2084,8 @@ $(function()
 				if (next === undefined)
 				{
 					await gpsWaitFor(
-						() => loadedPins.some(pin => String(pin.Element_Id) === parishNumber),
-						`the pins of ${parish.name}`);
+						() => pinsLoadedFor.has(GPS_COUNTRY),
+						`the pins of ${GPS_COUNTRY}`);
 					await gpsWaitFor(() =>
 					{
 						const path = gpsPath(id);
@@ -2044,7 +2098,7 @@ $(function()
 			}
 		}
 
-		/** Draw or move the marker. Re-appended so it stays above later-drawn pins. */
+		/** Draw or move the marker, on top of whatever the map has drawn so far. */
 		function gpsDrawMarker(fix)
 		{
 			if (gpsMarker === null)
@@ -2082,6 +2136,25 @@ $(function()
 			halo.setAttribute('r', haloR);
 			htmlPaths.appendChild(group);
 			return { x, y };
+		}
+
+		/**
+		 * Keep the marker above whatever the map drew after it.
+		 *
+		 * The dot is appended before the click chain runs, so it appears as soon as a
+		 * fix arrives. But gpsOpenParish then appends the parish outlines (and, on a
+		 * pinned parish, its pins) after it, and an opaque parish fill paints over the
+		 * dot: the first Locate showed nothing until a second fix re-appended the marker
+		 * (Follow, or a watch update on returning to the tab). Raising it once the
+		 * chain has finished is what makes the dot show on the first press.
+		 *
+		 * The last-child check keeps a fix in the same parish from reparenting the node
+		 * on every watch update.
+		 */
+		function gpsRaiseMarker()
+		{
+			if (gpsMarker !== null && htmlPaths.lastElementChild !== gpsMarker.group)
+				htmlPaths.appendChild(gpsMarker.group);
 		}
 
 		/**
@@ -2146,20 +2219,19 @@ $(function()
 				gpsStatus('You are here, but the parish outlines could not be loaded.');
 				return;
 			}
-			// Say WHERE the fix landed and how precise it is. There are two very
-			// different reasons to be outside: the position is somewhere else in the
-			// country (a desktop's network location can be a city away) or it is close
-			// but the parish has no pins, and the frame is only fitted where pins exist.
-			// Without the numbers neither is distinguishable.
+			// Say WHERE the fix landed and how precise it is. A null answer now means
+			// the frame put the point outside every Portuguese parish outline: outside
+			// the country, in water, or far enough from the fitted region that the
+			// extrapolation is off. The numbers are the only way to tell those apart.
 			const where = `${fix.lat.toFixed(4)}, ${fix.lon.toFixed(4)} ±${Math.round(fix.accuracy)} m`;
 			if (parish === null)
 			{
-				// Not resetting gpsParishId here on purpose: this is "outside the mapped
-				// area", not "no navigation happened yet". Resetting it made the view jump
-				// to the next parish entered even with Follow off — e.g. driving out of the
-				// area and back in.
-				console.log(`[gps] fix ${where} -> map ${at.x.toFixed(1)},${at.y.toFixed(1)}: outside the mapped parishes`);
-				gpsStatus(`You are here (${where}) — outside the mapped parishes. The frame is fitted around Cascais and Sintra.`);
+				// Not resetting gpsParishId here on purpose: this is "outside PT's
+				// parishes", not "no navigation happened yet". Resetting it made the view
+				// jump to the next parish entered even with Follow off — e.g. driving out
+				// of the area and back in.
+				console.log(`[gps] fix ${where} -> map ${at.x.toFixed(1)},${at.y.toFixed(1)}: no level-8 parish`);
+				gpsStatus(`You are here (${where}) — no Portuguese parish contains it.`);
 				return;
 			}
 			// One line per parish change, not per fix: a watch can deliver fixes every
@@ -2186,6 +2258,16 @@ $(function()
 					await gpsOpenParish(parish);
 					gpsParishId = parish.id;
 					gpsOpened = true;
+					// The app's no-pins branch steps back to the parent municipality
+					// after the parish click. GPS asked for the smallest unit, not its
+					// parent, so fit the parish outline the chain just drew. The name
+					// above is already the parish; only the view needed correcting.
+					if (pinsForCurrentRegion().length === 0)
+					{
+						const current = global.find(element => element.Element.Id_Child === parish.id);
+						if (current !== undefined)
+							zoomOnElement(current, $map[0]);
+					}
 				}
 				catch (error)
 				{
@@ -2196,6 +2278,7 @@ $(function()
 				finally
 				{
 					gpsNavigating = false;
+					gpsRaiseMarker();
 				}
 			}
 			const nearest = gpsNearestText(fix, parish);
