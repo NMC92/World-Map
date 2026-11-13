@@ -1846,5 +1846,45 @@
   "artist": "Dvfernandes",
   "page": "https://commons.wikimedia.org/wiki/File:Estacao-CP-amadora.jpg",
   "added": "2026-11-12"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400888/6519344/1.png": {
+  "file": "Parque Central da Amadora - Portugal (74527509).jpg",
+  "source": "commons-search",
+  "license": "CC BY-SA 2.0",
+  "artist": "Vitor Oliveira from Torres Vedras, PORTUGAL",
+  "page": "https://commons.wikimedia.org/wiki/File:Parque%20Central%20da%20Amadora%20-%20Portugal%20(74527509).jpg",
+  "added": "2026-11-13"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400888/6519344/4.png": {
+  "file": "Igreja Paroquial de São Brás 02.jpg",
+  "source": "wikidata:Q112324362",
+  "license": "CC BY-SA 4.0",
+  "artist": "GualdimG",
+  "page": "https://commons.wikimedia.org/wiki/File:Igreja%20Paroquial%20de%20S%C3%A3o%20Br%C3%A1s%2002.jpg",
+  "added": "2026-11-13"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400888/6519344/18.png": {
+  "file": "NCarenque2.JPG",
+  "source": "wikidata:Q10335950",
+  "license": "Public domain",
+  "artist": "CorreiaPM",
+  "page": "https://commons.wikimedia.org/wiki/File:NCarenque2.JPG",
+  "added": "2026-11-13"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400888/6519344/17.png": {
+  "file": "Amadora - Camara Municipal.jpg",
+  "source": "Wikimedia Commons",
+  "license": "CC BY-SA 3.0",
+  "artist": "Koshelyev",
+  "page": "https://commons.wikimedia.org/wiki/File:Amadora_-_Camara_Municipal.jpg",
+  "added": "2026-11-12"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400888/6519344/32.png": {
+  "file": "Estc edificio1.JPG",
+  "source": "Wikimedia Commons",
+  "license": "Public domain",
+  "artist": "Pedro Azevedo",
+  "page": "https://commons.wikimedia.org/wiki/File:Estc_edificio1.JPG",
+  "added": "2026-11-12"
  }
 }
