@@ -407,3 +407,17 @@ path {
 		font-size: 16px;
 	}
 }
+/* Prototype only (index.html?proto=1): the nearest-pin line acts as a link that
+   opens the pin. Colour matches the app's existing link blue; see MANUAL-TESTS.md. */
+#gps-nearest.pin-link {
+	cursor: pointer;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+#gps-nearest.pin-link:hover {
+	color: #1a73e8;
+}
+#gps-nearest.pin-link:focus-visible {
+	outline: 2px solid #1a73e8;
+	outline-offset: 2px;
+}

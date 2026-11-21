@@ -58,6 +58,16 @@ export const FRAME = Object.freeze({
 	by: 22297.686861079936,
 });
 
+/**
+ * The pin's ground point on its shared template: the teardrop tip, as an offset from
+ * the record's X/Y (which is the image's top-left). Measured over every pin at
+ * 0.122–0.135 × 0.416–0.445, so the app's nearest-pin distance carries ~10 m of
+ * slack — inside the frame's own 12 m median residual. Earth.js uses it for that
+ * distance; tools/place-pin.mjs uses it to move a pin in place.
+ */
+export const PIN_TIP_DX = 0.130;
+export const PIN_TIP_DY = 0.434;
+
 /** Web Mercator x of a longitude, in metres. */
 export function mercatorX(lon) {
 	return R * lon * Math.PI / 180;

@@ -1,11 +1,11 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-13-locate-parish-2';
+window.__mappuBuild = '2026-11-21-locate-chain-ancestor';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
 // gps-frame.js for the fit constants and their residuals.
-import { lonLatToXY, accuracyRadius, mapDistanceMetres, ringsOfPath, pointInRings, parishChain, shortlistByBbox } from './gps-frame.js';
+import { lonLatToXY, accuracyRadius, mapDistanceMetres, ringsOfPath, pointInRings, parishChain, shortlistByBbox, PIN_TIP_DX, PIN_TIP_DY } from './gps-frame.js';
 // Geometry is gzipped on the published site (the site has to stay under 1 GB) and
 // plain in the workbench; this asks for the .gz and falls back.
 import { fetchGeometryText } from './geometry-fetch.js';
@@ -16,6 +16,22 @@ let CC = '';
 // keeps AuxFiles/imgs/ on disk. The published copy sets the bucket root, whose
 // keys are the same paths without the AuxFiles/imgs/ prefix.
 const IMG_ROOT = 'https://storage.googleapis.com/bucket-wm8/';
+
+// Test hooks, off unless the page is opened as index.html?proto=1 (see MANUAL-TESTS.md):
+// &fix=lat,lon feeds a synthetic fix through the same code path as the Locate button,
+// and &fix2=lat,lon sends a second, forced one once the first navigation has settled —
+// the cross-branch case (open a Faro parish, then a Lisbon one). The animated viewBox
+// and the nearest-pin link are NOT test-only; they run always.
+const PROTO_TEST = new URLSearchParams(window.location.search).has('proto');
+const protoFix = name =>
+{
+	if(!PROTO_TEST) return null;
+	const m = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(new URLSearchParams(window.location.search).get(name) || '');
+	return m ? { lat: Number(m[1]), lon: Number(m[2]) } : null;
+};
+const PROTO_FIX = protoFix('fix');
+const PROTO_FIX2 = protoFix('fix2');
+const PROTO_REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 $(function()
 {
@@ -1521,22 +1537,39 @@ $(function()
 		  return start * (1 - t) + end * t;
 		}
 
-		function animateZoom(svg, startViewBox, endViewBox, duration) {
-		  const startTime = performance.now();
+		// One viewBox transition at a time; a fresh zoom cancels the running one, so two
+		// animations never fight over the attribute. Never animated for users who asked
+		// their system for reduced motion.
+		let zoomAnimation = 0;
 
-		  function step(timestamp) {
-			const elapsed = timestamp - startTime;
-			const progress = Math.min(elapsed / duration, 1);
-			const currentViewBox = startViewBox.map((val, i) => lerp(val, endViewBox[i], progress));
-
-			svg.children[0].setAttribute('viewBox', currentViewBox.join(' '));
-
-			if (progress < 1) {
-			  requestAnimationFrame(step);
+		function setViewBoxAnimated(svg, target, duration)
+		{
+			const root = svg.children[0];
+			if(PROTO_REDUCED || duration === undefined)
+			{
+				root.setAttribute('viewBox', target);
+				return;
 			}
-		  }
-
-		  requestAnimationFrame(step);
+			if(zoomAnimation)
+				cancelAnimationFrame(zoomAnimation);
+			const to = target.trim().split(/\s+/).map(Number);
+			const from = (root.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+			if(from.length !== 4 || !from.every(Number.isFinite) || !to.every(Number.isFinite))
+			{
+				root.setAttribute('viewBox', target);
+				return;
+			}
+			const start = performance.now();
+			// easeInOutQuad: no visible start/stop, which is what a jump is not.
+			const ease = p => p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+			const step = now =>
+			{
+				const p = Math.min((now - start) / duration, 1);
+				const k = ease(p);
+				root.setAttribute('viewBox', from.map((v, i) => v + (to[i] - v) * k).join(' '));
+				zoomAnimation = p < 1 ? requestAnimationFrame(step) : 0;
+			};
+			zoomAnimation = requestAnimationFrame(step);
 		}
 
 		function zoomOnElement(e, svg)
@@ -1552,7 +1585,7 @@ $(function()
 				$("#back" ).prop("disabled", false);
 				zooming = false;
 				let viewBox = `${boundingRect.x*0.9999875} ${boundingRect.y*0.999975} ${boundingRect.width*3.33} ${boundingRect.height*3.33}`
-				svg.children[0].setAttribute(`viewBox`, viewBox);
+				setViewBoxAnimated(svg, viewBox, 300);
 			}
 			else
 			{
@@ -1563,11 +1596,11 @@ $(function()
 					$("#back" ).prop("disabled", false);
 					zooming = false;
 					let viewBox = `${boundingRect.x*resizeVar} ${boundingRect.y*resizeVar*0.99998375} ${boundingRect.width*1.08*resizeVar} ${boundingRect.height*1.18*resizeVar}`
-					svg.children[0].setAttribute(`viewBox`, viewBox);
+					setViewBoxAnimated(svg, viewBox, 300);
 				}
 				else
 				{
-					svg.children[0].setAttribute(`viewBox`, `0 0 ${mapWidth} ${mapHeight}`);
+					setViewBoxAnimated(svg, `0 0 ${mapWidth} ${mapHeight}`, 300);
 					$("#reset" ).prop("disabled", false);
 					$("#back" ).prop("disabled", false);
 					zooming = false;
@@ -1754,10 +1787,7 @@ $(function()
 		// a quarter of a pin's 0.2575 width, about 4 screen px at parish zoom.
 		const GPS_DOT_R = 0.1;
 		// The pin record stores the image's top-left corner; the ground point is the
-		// teardrop's tip, a constant offset on the shared template `D`. Measured over
-		// every pin (0.122–0.135 × 0.416–0.445), so the nearest-pin distance carries
-		// ~10 m of slack, which is well inside the frame's own 12 m median residual.
-		const PIN_TIP_DX = 0.130, PIN_TIP_DY = 0.434;
+		// teardrop's tip, PIN_TIP_DX/PIN_TIP_DY in gps-frame.js (shared with the tools).
 
 		let gpsFollow = false;
 		try { gpsFollow = window.localStorage.getItem(GPS_FOLLOW_KEY) === '1'; }
@@ -1768,6 +1798,7 @@ $(function()
 		let gpsNavigating = false; // the click chain is running
 		let gpsForceNext = false;  // the next fix should move the view (a Locate press)
 		let gpsParishId = '';     // the parish the view was last sent to
+		let gpsNearestPin = null;  // the pin #gps-nearest names and opens
 		let gpsOpened = false;    // has a fix ever successfully moved the view
 		let gpsParishes = null;    // promise of the country/bbox index, fetched once
 		let gpsBuckets = new Map(); // bucket name -> promise of { numericId -> path }
@@ -1783,6 +1814,37 @@ $(function()
 		{
 			$('#gps-status').text(text);
 			$('#gps-nearest').text(nearest === undefined || nearest === null ? '' : nearest);
+			markNearestPin(nearest);
+		}
+
+		/**
+		 * The nearest-pin line as a link. It only turns into a
+		 * control when gpsNearestText found a pin and a fix produced it, so the status
+		 * line stays plain text in every other state. A real button role plus a tab stop
+		 * keeps it usable from the keyboard; the aria-live region still announces it.
+		 */
+		function markNearestPin(nearest)
+		{
+			const $nearest = $('#gps-nearest');
+			const linked = nearest !== undefined && nearest !== null && gpsNearestPin !== null;
+			$nearest.toggleClass('pin-link', linked);
+			if(linked)
+				$nearest.attr({ role: 'button', tabindex: '0', title: `Open ${gpsNearestPin.Name}` });
+			else
+				$nearest.removeAttr('role tabindex title');
+		}
+
+		/** Open the pin named on the status line: same effect as clicking the pin. */
+		function openNearestPin()
+		{
+			if(gpsNearestPin === null || gpsNearestPin.Path === undefined)
+				return;
+			const pin = gpsNearestPin;
+			pinClicked = true;
+			setOtherPinsVisible(pin, false);
+			syncPinSelect(pin);
+			zoomOnElement(pin.Path, $map[0]);
+			span.innerHTML = `Highlight selected: ${pin.Name}`;
 		}
 
 		function gpsFollowLabel()
@@ -2077,6 +2139,24 @@ $(function()
 				return;
 			}
 
+			// Start the descent from the LAST common element, the way a user would: going
+			// from a Faro parish to a Lisbon one means going back to Portugal first, not
+			// clicking the Lisbon district from inside Faro. This is a viewBox change only
+			// — the state (`clicked`) is untouched and the click below does the real work.
+			// The ancestor's outline is shown for the zoom and hidden again, exactly as the
+			// Back handler does it, because a hidden path has no bbox to zoom to.
+			if (from > 0)
+			{
+				const ancestor = global.find(element => element.Element.Id_Child === chain[from - 1]);
+				if (ancestor !== undefined)
+				{
+					console.log(`[gps] showing the common ancestor ${chain[from - 1]} before the descent`);
+					showPath(ancestor.Path, ancestor.D);
+					zoomOnElement(ancestor, $map[0]);
+					hidePath(ancestor.Path);
+				}
+			}
+
 			for (let i = from; i < chain.length; i++)
 			{
 				const id = chain[i];
@@ -2174,7 +2254,10 @@ $(function()
 		{
 			const current = clicked.length > 0 ? clicked[clicked.length - 1] : undefined;
 			if (current === undefined || String(current.Element.Id) !== parish.id.slice('relation/'.length))
+			{
+				gpsNearestPin = null;
 				return null;
+			}
 			const here = lonLatToXY(fix.lon, fix.lat);
 			let best = null, bestMetres = Infinity;
 			for (const pin of pinsForCurrentRegion().filter(pinIsVisible))
@@ -2188,7 +2271,11 @@ $(function()
 				}
 			}
 			if (best === null)
+			{
+				gpsNearestPin = null;
 				return null;
+			}
+			gpsNearestPin = best;
 			const label = onlyPinsWithoutImages ? 'nearest pin without a picture' : 'nearest pin';
 			const distance = bestMetres < 10 ? 'under 10 m' : `${Math.round(bestMetres)} m`;
 			return { label, name: `${best.Name} (${distance})` };
@@ -2350,6 +2437,38 @@ $(function()
 				.attr('title', 'This browser has no geolocation');
 		else if (window.isSecureContext === false)
 			$('#locate').attr('title', 'Location needs https or localhost — this page is plain http');
+
+		// The nearest-pin line opens that pin, with mouse or keyboard.
+		$('#gps-nearest').on('click', openNearestPin);
+		$('#gps-nearest').on('keydown', function(e)
+		{
+			if(e.key === 'Enter' || e.key === ' ')
+			{
+				e.preventDefault();
+				openNearestPin();
+			}
+		});
+
+		// Test hook (?proto=1&fix=lat,lon[&fix2=lat,lon]): feed synthetic fixes through
+		// the same path as the Locate button, so the chain is testable on a desktop with
+		// no geolocation. Never runs without ?proto=1.
+		if(PROTO_FIX !== null)
+		{
+			console.log(`[proto] synthetic fix ${PROTO_FIX.lat}, ${PROTO_FIX.lon}`);
+			setTimeout(() => gpsApplyFix({ ...PROTO_FIX, accuracy: 20 }), 600);
+			if(PROTO_FIX2 !== null)
+			{
+				// A Locate press forces the view; the second fix does the same, after the
+				// first chain has had time to settle.
+				console.log(`[proto] second synthetic fix ${PROTO_FIX2.lat}, ${PROTO_FIX2.lon} in 7 s`);
+				setTimeout(() =>
+				{
+					gpsForceNext = true;
+					gpsApplyFix({ ...PROTO_FIX2, accuracy: 20 });
+				}, 7000);
+			}
+		}
+
 
 		$('#back').on('click', function()
 		{
