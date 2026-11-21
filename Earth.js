@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-21-locate-chain-ancestor';
+window.__mappuBuild = '2026-11-21-nearest-pin-guard';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -31,6 +31,8 @@ const protoFix = name =>
 };
 const PROTO_FIX = protoFix('fix');
 const PROTO_FIX2 = protoFix('fix2');
+// How long to wait before the second fix (the cross-branch / nearest-pin regression test).
+const PROTO_FIX2_DELAY = Math.max(1000, Number(new URLSearchParams(window.location.search).get('fix2delay') || 7000));
 const PROTO_REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 $(function()
@@ -1578,8 +1580,26 @@ $(function()
 			$("#reset" ).prop("disabled", true);
 			$("#back" ).prop("disabled", true);
 			let boundingRect;
+			// A display:none path reports a zero bbox. Zooming to it would set
+			// viewBox="0 0 0 0" and leave nothing but the blue background, so an element
+			// that cannot be measured keeps the current view (and the buttons usable).
+			const unmeasurable = run =>
+			{
+				let rect = null;
+				try { rect = run(); }
+				catch (error) { rect = null; }
+				if(rect !== null && rect.width > 0 && rect.height > 0)
+					return false;
+				console.warn(`[zoom] no bbox for ${e.Element === undefined ? e.getAttribute('name') : e.Element.Name_Child}; keeping the view`);
+				$("#reset" ).prop("disabled", false);
+				$("#back" ).prop("disabled", false);
+				zooming = false;
+				return true;
+			};
 			if(e.classList !== undefined && e.classList.length > 0 && e.classList.contains('pin'))
 			{
+				if(unmeasurable(() => e.getBBox()))
+					return;
 				boundingRect = e.getBBox();
 				$("#reset" ).prop("disabled", false);
 				$("#back" ).prop("disabled", false);
@@ -1589,6 +1609,8 @@ $(function()
 			}
 			else
 			{
+				if(unmeasurable(() => e.Path.getBBox()))
+					return;
 				boundingRect = e.Path.getBBox();
 				if(parseInt(e.Element.AdminLevel_Child) > 1)
 				{
@@ -1841,6 +1863,11 @@ $(function()
 				return;
 			const pin = gpsNearestPin;
 			pinClicked = true;
+			// A previous highlight (or a filter) can leave this pin hidden, and a hidden
+			// path has no bbox to zoom to — showing it first is what keeps the viewBox
+			// from collapsing to 0 0 0 0 when the nearest pin changes under the pointer.
+			$(pin.Path).show();
+			$(pin.Img).show();
 			setOtherPinsVisible(pin, false);
 			syncPinSelect(pin);
 			zoomOnElement(pin.Path, $map[0]);
@@ -2460,12 +2487,12 @@ $(function()
 			{
 				// A Locate press forces the view; the second fix does the same, after the
 				// first chain has had time to settle.
-				console.log(`[proto] second synthetic fix ${PROTO_FIX2.lat}, ${PROTO_FIX2.lon} in 7 s`);
+				console.log(`[proto] second synthetic fix ${PROTO_FIX2.lat}, ${PROTO_FIX2.lon} in ${Math.round(PROTO_FIX2_DELAY / 1000)} s`);
 				setTimeout(() =>
 				{
 					gpsForceNext = true;
 					gpsApplyFix({ ...PROTO_FIX2, accuracy: 20 });
-				}, 7000);
+				}, PROTO_FIX2_DELAY);
 			}
 		}
 
