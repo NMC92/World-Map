@@ -3663,14 +3663,6 @@
   "page": "https://commons.wikimedia.org/wiki/File:1506_pogrom_memorial_in_Lisbon.jpg",
   "added": "2026-11-24"
  },
- "AuxFiles/imgs/3/30/295480/2897141/5400890/6427496/101.png": {
-  "file": "Double (43063912952).jpg",
-  "source": "Wikimedia Commons",
-  "license": "CC BY 2.0",
-  "artist": "rippchenmitkraut66",
-  "page": "https://commons.wikimedia.org/wiki/File:Double_(43063912952).jpg",
-  "added": "2026-11-24"
- },
  "AuxFiles/imgs/3/30/295480/2897141/5400890/6427496/103.png": {
   "file": "Lisboa mural Pelikany.jpg",
   "source": "Wikimedia Commons",
@@ -3701,6 +3693,14 @@
   "license": "CC BY 3.0",
   "artist": "Mister No",
   "page": "https://commons.wikimedia.org/wiki/File:Igreja_da_Sao_Nicolau_-_panoramio.jpg",
+  "added": "2026-11-24"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400890/6427493/2.png": {
+  "file": "Double (43063912952).jpg",
+  "source": "Wikimedia Commons",
+  "license": "CC BY 2.0",
+  "artist": "rippchenmitkraut66",
+  "page": "https://commons.wikimedia.org/wiki/File:Double_(43063912952).jpg",
   "added": "2026-11-24"
  }
 }
