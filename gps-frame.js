@@ -303,3 +303,32 @@ export function pointInRings(x, y, rings) {
 	}
 	return inside;
 }
+
+/**
+ * Distance from a point to a line segment, in the units the arguments are in.
+ *
+ * Point-to-segment, not point-to-vertex: parish outlines carry long straight rural
+ * edges, and a nearest-vertex answer would report a point 5 m from such an edge as
+ * far away as the edge's nearest corner.
+ */
+export function segmentDistance(px, py, ax, ay, bx, by) {
+	const dx = bx - ax, dy = by - ay;
+	const lengthSquared = dx * dx + dy * dy;
+	const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared));
+	return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/** Distance from a point to the nearest edge of any ring; Infinity when empty. */
+export function nearestRingDistance(x, y, rings) {
+	let best = Infinity;
+	for (const ring of rings)
+	{
+		for (let i = 0, j = ring.length - 1; i < ring.length; j = i++)
+		{
+			const distance = segmentDistance(x, y, ring[j][0], ring[j][1], ring[i][0], ring[i][1]);
+			if (distance < best)
+				best = distance;
+		}
+	}
+	return best;
+}

@@ -1,11 +1,11 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-21-nearest-pin-guard';
+window.__mappuBuild = '2026-11-24-boundary-snap';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
 // gps-frame.js for the fit constants and their residuals.
-import { lonLatToXY, accuracyRadius, mapDistanceMetres, ringsOfPath, pointInRings, parishChain, shortlistByBbox, PIN_TIP_DX, PIN_TIP_DY } from './gps-frame.js';
+import { lonLatToXY, accuracyRadius, mapDistanceMetres, ringsOfPath, pointInRings, nearestRingDistance, parishChain, shortlistByBbox, PIN_TIP_DX, PIN_TIP_DY } from './gps-frame.js';
 // Geometry is gzipped on the published site (the site has to stay under 1 GB) and
 // plain in the workbench; this asks for the .gz and falls back.
 import { fetchGeometryText } from './geometry-fetch.js';
@@ -1810,6 +1810,13 @@ $(function()
 		const GPS_DOT_R = 0.1;
 		// The pin record stores the image's top-left corner; the ground point is the
 		// teardrop's tip, PIN_TIP_DX/PIN_TIP_DY in gps-frame.js (shared with the tools).
+		// How far outside every outline a fix may still be snapped to the nearest
+		// parish, in viewBox units: 0.05 ≈ 33 ground metres here. Parish outlines
+		// leave slivers between neighbours — measured 16 m between Venteira and
+		// Águas Livres at 38.7456, -9.2332 on 2026-11-24, where a fix inside neither
+		// answered "no Portuguese parish contains it" — so the tolerance is about
+		// twice the widest gap seen, and well inside the 65 m dot and one pin width.
+		const GPS_NEAREST_PARISH = 0.05;
 
 		let gpsFollow = false;
 		try { gpsFollow = window.localStorage.getItem(GPS_FOLLOW_KEY) === '1'; }
@@ -2125,7 +2132,77 @@ $(function()
 						found = { id: `relation/${number}`, name: record.Name_Child, record, rings, area };
 				}
 			}
+			// Neighbouring outlines do not always meet. Measured on 2026-11-24 at
+			// 38.7456, -9.2332 (the Venteira / Águas Livres boundary): 1.2 m outside
+			// Venteira's edge and 15 m outside Águas Livres', inside neither. Without
+			// this, driving across a boundary answers "no Portuguese parish contains
+			// it" and the Highlights list goes empty. Snap to the closest outline, but
+			// only within GPS_NEAREST_PARISH so open water and the country's edge still
+			// answer null.
+			if (found === null)
+				found = await gpsNearestParish(x, y, data);
 			return found;
+		}
+
+		/**
+		 * The parish whose outline is closest to a point that no outline contains.
+		 *
+		 * Only called when the normal lookup failed, so the full bbox scan costs
+		 * nothing on the usual path. Distances are point-to-segment: a long straight
+		 * rural edge would otherwise be reported as far away as its nearest vertex.
+		 */
+		async function gpsNearestParish(x, y, data)
+		{
+			const pad = GPS_NEAREST_PARISH / resizeVar;
+			const cs = x / resizeVar, cy = y / resizeVar;
+			const near = [];
+			for (const number in data.bboxes)
+			{
+				const box = data.bboxes[number];
+				if (cs >= box[0] - pad && cs <= box[2] + pad && cy >= box[1] - pad && cy <= box[3] + pad)
+					near.push(number);
+			}
+			if (near.length === 0)
+				return null;
+			const byBucket = new Map();
+			for (const number of near)
+			{
+				const name = data.index.elements[`relation/${number}`];
+				if (name === undefined)
+					continue;
+				if (!byBucket.has(name))
+					byBucket.set(name, []);
+				byBucket.get(name).push(number);
+			}
+			const geometryOf = new Map(await Promise.all(
+				[...byBucket.keys()].map(async name => [name, await gpsBucket(name)])));
+			let best = null;
+			for (const [name, numbers] of byBucket)
+			{
+				const geometry = geometryOf.get(name);
+				for (const number of numbers)
+				{
+					const d = geometry.get(number);
+					if (d === undefined)
+						continue;
+					const closest = nearestRingDistance(x, y, ringsOfPath(d, resizeVar));
+					if (closest > GPS_NEAREST_PARISH)
+						continue;
+					const record = data.byId.get(`relation/${number}`);
+					if (record === undefined)
+						continue;
+					if (best === null || closest < best.closest)
+						best = {
+							id: `relation/${number}`,
+							name: record.Name_Child,
+							record,
+							rings: ringsOfPath(d, resizeVar),
+							area: (data.bboxes[number][2] - data.bboxes[number][0]) * (data.bboxes[number][3] - data.bboxes[number][1]),
+							closest,
+						};
+				}
+			}
+			return best;
 		}
 
 		/**
