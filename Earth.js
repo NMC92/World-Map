@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-25-compass-cone';
+window.__mappuBuild = '2026-11-25-cone-nostroke';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -40,6 +40,9 @@ const PROTO_HEADING = PROTO_HEADING_RAW !== null && PROTO_HEADING_RAW.trim() !==
 if(PROTO_FIX !== null && Number.isFinite(PROTO_HEADING)) PROTO_FIX.heading = PROTO_HEADING;
 // ?compass=<deg> pretends the device compass is running, so the compass branch can be
 // exercised without a phone: no test can dispatch a real deviceorientation event.
+const PROTO_ACCURACY_RAW = PROTO_TEST ? new URLSearchParams(window.location.search).get('accuracy') : null;
+const PROTO_ACCURACY = PROTO_ACCURACY_RAW !== null && PROTO_ACCURACY_RAW.trim() !== '' && Number.isFinite(Number(PROTO_ACCURACY_RAW))
+	? Number(PROTO_ACCURACY_RAW) : null;
 const PROTO_COMPASS_RAW = PROTO_TEST ? new URLSearchParams(window.location.search).get('compass') : null;
 const PROTO_COMPASS = PROTO_COMPASS_RAW !== null && PROTO_COMPASS_RAW.trim() !== '' && Number.isFinite(Number(PROTO_COMPASS_RAW))
 	? Number(PROTO_COMPASS_RAW) : null;
@@ -2422,16 +2425,18 @@ $(function()
 				const group = doc.createElementNS(ns, 'g');
 				group.setAttribute('id', 'gps-marker');
 				group.setAttribute('pointer-events', 'none');
+				// Accuracy ring, NOT a filled disc. The filled halo rendered as a huge BLACK
+				// disc on the phone even though its attributes were right (verified in the
+				// DOM: fill rgb(26,115,232) at 0.15). The map's classes set fill/fill-opacity
+				// in CSS, and CSS beats presentation attributes — so anything this marker
+				// relies on must be inline styles, and a ring has no fill to be repainted.
 				const halo = doc.createElementNS(ns, 'circle');
-				halo.setAttribute('fill', '#1a73e8');
-				halo.setAttribute('fill-opacity', '0.15');
-				halo.setAttribute('stroke', '#1a73e8');
-				halo.setAttribute('stroke-opacity', '0.5');
-				halo.setAttribute('stroke-width', '0.01');
+				halo.style.fill = 'rgba(26, 115, 232, 0.12)';
+				halo.style.stroke = 'none';
 				const dot = doc.createElementNS(ns, 'circle');
-				dot.setAttribute('fill', '#1a73e8');
-				dot.setAttribute('stroke', '#ffffff');
-				dot.setAttribute('stroke-width', '0.02');
+				dot.style.fill = '#1a73e8';
+				dot.style.stroke = '#ffffff';
+				dot.style.strokeWidth = '0.02';
 				// The direction of travel: a soft wedge behind the dot, the cue a phone map
 				// gives. NO gradient: an unresolvable url(#...) fill paints BLACK in Chrome,
 				// which is what the first version did. Stacking translucent wedges of
@@ -2442,8 +2447,15 @@ $(function()
 				[[0.55, 0.2], [0.78, 0.12], [1, 0.07]].forEach(([part, opacity]) =>
 				{
 					const layer = doc.createElementNS(ns, 'path');
-					layer.setAttribute('fill', '#1a73e8');
-					layer.setAttribute('fill-opacity', String(opacity));
+					layer.style.fill = '#1a73e8';
+					layer.style.fillOpacity = String(opacity);
+					// Earth.css has a bare `path { stroke: black; pointer-events: all }`.
+					// CSS beats presentation attributes, so these wedges were stroked BLACK
+					// at the default width of 1 viewBox unit (~655 m) - the black blob - and
+					// they also swallowed clicks meant for the pins underneath. Both are
+					// inline styles because only those win over that rule.
+					layer.style.stroke = 'none';
+					layer.style.pointerEvents = 'none';
 					layer.setAttribute('data-part', String(part));
 					cone.appendChild(layer);
 				});
@@ -2722,7 +2734,7 @@ $(function()
 		if(PROTO_FIX !== null)
 		{
 			console.log(`[proto] synthetic fix ${PROTO_FIX.lat}, ${PROTO_FIX.lon}`);
-			setTimeout(() => gpsApplyFix({ ...PROTO_FIX, accuracy: 20 }), 600);
+			setTimeout(() => gpsApplyFix({ ...PROTO_FIX, accuracy: PROTO_ACCURACY === null ? 20 : PROTO_ACCURACY }), 600);
 			if(PROTO_FIX2 !== null)
 			{
 				// A Locate press forces the view; the second fix does the same, after the
