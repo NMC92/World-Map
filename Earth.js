@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-25-pin-filter-hint2';
+window.__mappuBuild = '2026-11-25-back-from-pin';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -108,7 +108,7 @@ $(function()
 		transContinental = ['AM', 'AZ', 'CY', 'EG', 'GE', 'ID', 'KZ', 'RU', 'TR'],
 		emptyCountries = ['AI', 'IO', 'PN', 'VA'],
 		smallC = ['AD', 'GI', 'LI', 'MC', 'SM', 'VA'],
-		start, end, globalJson, countryCode = '', second = '', diffCCode = false, loader = false, progressBar = document.getElementById("progress-bar"), progressValue = document.getElementById("progress-value"), zooming = false, pinClicked = false, containerLoaded = false, resizeVar = 60;
+		start, end, globalJson, countryCode = '', second = '', diffCCode = false, loader = false, progressBar = document.getElementById("progress-bar"), progressValue = document.getElementById("progress-value"), zooming = false, pinClicked = false, focusedPin = null, containerLoaded = false, resizeVar = 60;
 		
 		/**
 		 * Where a pin's image lives.
@@ -547,11 +547,13 @@ $(function()
 			{
 				setOtherPinsVisible(keepPin, true);
 				pinClicked = false;
+				focusedPin = null;
 			}
 			else
 			{
 				setOtherPinsVisible(keepPin, false);
 				pinClicked = true;
+				focusedPin = keepPin;
 			}
 			syncPinSelect(keepPin);
 			zoomOnElement(zoomTarget, a.target.contentDocument);
@@ -2595,6 +2597,27 @@ $(function()
 
 		$('#back').on('click', function()
 		{
+			// A focused pin is itself a zoom, so Back has to undo it first: it returns to
+			// the parish the pin belongs to, not to the municipality above it. Without
+			// this, pin → Back skipped the parish entirely and landed on the county.
+			if(pinClicked && focusedPin !== null)
+			{
+				setOtherPinsVisible(focusedPin, true);
+				pinClicked = false;
+				focusedPin = null;
+				const sel = $(document).find('select')[0];
+				if(sel !== undefined)
+					sel.selectedIndex = 0;
+				const glob = clicked.at(-1);
+				if(glob !== undefined)
+				{
+					showPath(glob.Path, glob.D);
+					zoomOnElement(glob, a.target.contentDocument);
+					hidePath(glob.Path);
+					span.innerHTML = glob.Element.Name_Child + pinsFilterNote(glob.Element);
+				}
+				return;
+			}
 			if(clicked.length > 1)
 			{
 				let glob = clicked.at(-1);
