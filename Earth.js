@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-25-back-from-pin2';
+window.__mappuBuild = '2026-11-25-heading-cone2';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -30,6 +30,14 @@ const protoFix = name =>
 	return m ? { lat: Number(m[1]), lon: Number(m[2]) } : null;
 };
 const PROTO_FIX = protoFix('fix');
+// ?heading=<degrees> gives the synthetic fix a direction, so the cone can be tested:
+// a stationary phone reports heading null, so real fixes cannot exercise it.
+// Number(null) is 0, so a missing parameter used to mean "heading 0" - a cone
+// pointing north on every proto run. Only a present, numeric value counts.
+const PROTO_HEADING_RAW = PROTO_TEST ? new URLSearchParams(window.location.search).get('heading') : null;
+const PROTO_HEADING = PROTO_HEADING_RAW !== null && PROTO_HEADING_RAW.trim() !== '' && Number.isFinite(Number(PROTO_HEADING_RAW))
+	? Number(PROTO_HEADING_RAW) : NaN;
+if(PROTO_FIX !== null && Number.isFinite(PROTO_HEADING)) PROTO_FIX.heading = PROTO_HEADING;
 const PROTO_FIX2 = protoFix('fix2');
 // How long to wait before the second fix (the cross-branch / nearest-pin regression test).
 const PROTO_FIX2_DELAY = Math.max(1000, Number(new URLSearchParams(window.location.search).get('fix2delay') || 7000));
@@ -1845,7 +1853,8 @@ $(function()
 		catch (e) { /* storage can be blocked; keep the default */ }
 		let gpsWatch = null;       // the geolocation watch, once started
 		let gpsFix = null;         // the newest { lat, lon, accuracy }
-		let gpsMarker = null;      // { group, halo, dot } in the SVG document
+		let gpsMarker = null;      // { group, halo, cone, dot, fade } in the SVG document
+		let gpsHeadingLogged;      // last heading written to the console, for the proto test
 		let gpsNavigating = false; // the click chain is running
 		let gpsForceNext = false;  // the next fix should move the view (a Locate press)
 		let gpsParishId = '';     // the parish the view was last sent to
@@ -2325,22 +2334,67 @@ $(function()
 				dot.setAttribute('fill', '#1a73e8');
 				dot.setAttribute('stroke', '#ffffff');
 				dot.setAttribute('stroke-width', '0.02');
+				// The direction of travel: a wedge behind the dot that fades out, the way
+				// a phone's own map shows heading. It is drawn pointing up (-y, north) and
+				// rotated by the reported heading, so the fade runs from the dot outwards.
+				const defs = doc.querySelector('defs') || doc.appendChild(doc.createElementNS(ns, 'defs'));
+				const fade = doc.createElementNS(ns, 'radialGradient');
+				fade.setAttribute('id', 'gps-heading-fade');
+				fade.setAttribute('gradientUnits', 'userSpaceOnUse');
+				const fadeIn = doc.createElementNS(ns, 'stop');
+				fadeIn.setAttribute('offset', '0%');
+				fadeIn.setAttribute('stop-color', '#1a73e8');
+				fadeIn.setAttribute('stop-opacity', '0.5');
+				const fadeOut = doc.createElementNS(ns, 'stop');
+				fadeOut.setAttribute('offset', '100%');
+				fadeOut.setAttribute('stop-color', '#1a73e8');
+				fadeOut.setAttribute('stop-opacity', '0');
+				fade.appendChild(fadeIn);
+				fade.appendChild(fadeOut);
+				defs.appendChild(fade);
+				const cone = doc.createElementNS(ns, 'path');
+				cone.setAttribute('id', 'gps-heading');
+				cone.setAttribute('fill', 'url(#gps-heading-fade)');
+				cone.setAttribute('display', 'none');
 				group.appendChild(halo);
+				group.appendChild(cone);
 				group.appendChild(dot);
 				htmlPaths.appendChild(group);
-				gpsMarker = { group, halo, dot };
+				gpsMarker = { group, halo, dot, cone, fade };
 			}
 			const { x, y } = lonLatToXY(fix.lon, fix.lat);
 			// A circle smaller than the dot could not be read; below that the accuracy
 			// is simply "the dot", which is what a map dot means at this zoom anyway.
 			const haloR = Math.max(GPS_DOT_R, accuracyRadius(fix.accuracy, fix.lat));
 			const { dot, halo, group } = gpsMarker;
+			if(gpsHeadingLogged === undefined) gpsHeadingLogged = null;
 			dot.setAttribute('cx', x);
 			dot.setAttribute('cy', y);
 			dot.setAttribute('r', GPS_DOT_R);
 			halo.setAttribute('cx', x);
 			halo.setAttribute('cy', y);
 			halo.setAttribute('r', haloR);
+			// Heading null is normal: a stationary phone, or no compass.
+			const { cone, fade } = gpsMarker;
+			const headingDeg = Number.isFinite(fix.heading) ? ((fix.heading % 360) + 360) % 360 : null;
+			if(headingDeg === null)
+				cone.setAttribute('display', 'none');
+			else
+			{
+				const reach = 0.45, spread = 0.17;
+				cone.setAttribute('display', 'inline');
+				cone.setAttribute('d', `M ${x},${y} L ${x - spread},${y - reach * 0.88} `
+					+ `Q ${x},${y - reach * 1.1} ${x + spread},${y - reach * 0.88} Z`);
+				cone.setAttribute('transform', `rotate(${headingDeg} ${x} ${y})`);
+				fade.setAttribute('cx', x);
+				fade.setAttribute('cy', y);
+				fade.setAttribute('r', reach * 1.1);
+				if(gpsHeadingLogged === null || Math.abs(headingDeg - gpsHeadingLogged) >= 10)
+				{
+					console.log(`[gps] heading ${headingDeg.toFixed(0)} deg`);
+					gpsHeadingLogged = headingDeg;
+				}
+			}
 			htmlPaths.appendChild(group);
 			return { x, y };
 		}
@@ -2516,6 +2570,14 @@ $(function()
 				lat: position.coords.latitude,
 				lon: position.coords.longitude,
 				accuracy: position.coords.accuracy,
+				// Browsers report the direction of travel here and set it to null when
+				// they cannot tell — standing still, or no compass. Safari also exposes an
+				// absolute compass heading under a non-standard name, which is the only
+				// one that works while stationary, so use it when present.
+				heading: Number.isFinite(position.coords.heading) ? position.coords.heading
+					: Number.isFinite(position.coords.webkitCompassHeading) ? position.coords.webkitCompassHeading
+					: null,
+				speed: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
 			});
 		}
 
