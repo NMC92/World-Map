@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-24-boundary-snap';
+window.__mappuBuild = '2026-11-25-pin-filter-hint2';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -912,7 +912,7 @@ $(function()
 					else
 					{
 						hideLoader();
-						span.innerHTML = globEl.Element.Name_Child;
+						span.innerHTML = globEl.Element.Name_Child + pinsFilterNote(globEl.Element);
 						let matchingPins = pinsForCurrentRegion();
 						if(matchingPins.length > 0)
 						{
@@ -1703,12 +1703,29 @@ $(function()
 		}
 
 		/** Apply both pin filters to the current parish and rebuild the Highlights menu. */
+		/**
+		 * Why the parish looks empty.
+		 *
+		 * The view never depends on the pins: a parish zoom frames the outline, so
+		 * unticking a filter cannot re-zoom and does not need to. What an empty parish
+		 * lacks is a reason — with "image pins only" on, Campolide zooms in and shows
+		 * nothing at all. This says which of the two situations it is.
+		 */
+		function pinsFilterNote(element)
+		{
+			// By record, not by drawn path: this is also called on parish entry, before
+			// the parish's pins are drawn, and requiring pin.Path made every parish look
+			// empty. pinIsVisible() reads the record only.
+			const mine = loadedPins.filter(pin => String(pin.Element_Id) === String(element.Id));
+			if(mine.length === 0)
+				return ' — no pins here yet';
+			return mine.some(pin => pinIsVisible(pin)) ? '' : ' — no pins match the filters';
+		}
+
 		function applyPinFilters()
 		{
 			pinClicked = false;
 			let current = clicked.at(-1);
-			if(current !== undefined)
-				span.innerHTML = current.Element.Name_Child;
 			loadedPins.filter(pin => current !== undefined && pin.Element_Id === current.Element.Id).forEach(pin =>
 			{
 				if(pin.Path === undefined)
@@ -1724,6 +1741,8 @@ $(function()
 					$(pin.Img).hide();
 				}
 			});
+			if(current !== undefined)
+				span.innerHTML = current.Element.Name_Child + pinsFilterNote(current.Element);
 			refreshPinHighlightOptions();
 		}
 
