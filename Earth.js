@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-25-back-from-pin';
+window.__mappuBuild = '2026-11-25-back-from-pin2';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -1020,6 +1020,7 @@ $(function()
 									{
 										setOtherPinsVisible(selectedPin, false);
 										pinClicked = true;
+										focusedPin = selectedPin;
 										$(selectedPin.Path).show();
 										$(selectedPin.Img).show();
 										zoomOnElement(selectedPin.Path, a.target.contentDocument);
@@ -1891,6 +1892,7 @@ $(function()
 				return;
 			const pin = gpsNearestPin;
 			pinClicked = true;
+			focusedPin = pin;
 			// A previous highlight (or a filter) can leave this pin hidden, and a hidden
 			// path has no bbox to zoom to — showing it first is what keeps the viewBox
 			// from collapsing to 0 0 0 0 when the nearest pin changes under the pointer.
