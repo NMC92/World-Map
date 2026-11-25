@@ -3439,14 +3439,6 @@
   "page": "https://commons.wikimedia.org/wiki/File:Santo_Amaro_train_station.jpg",
   "added": "2026-11-24"
  },
- "AuxFiles/imgs/3/30/295480/2897141/5400892/6523781/61.png": {
-  "file": "Quinta Real de Caxias (Oeiras) 15.jpg",
-  "source": "Wikimedia Commons",
-  "license": "CC BY-SA 4.0",
-  "artist": "GualdimG",
-  "page": "https://commons.wikimedia.org/wiki/File:Quinta_Real_de_Caxias_(Oeiras)_15.jpg",
-  "added": "2026-11-24"
- },
  "AuxFiles/imgs/3/30/295480/2897141/5400892/6523781/62.png": {
   "file": "BatariadaLage1.jpg",
   "source": "Wikimedia Commons",
@@ -4285,6 +4277,14 @@
   "license": "CC0",
   "artist": "Museu Nacional dos Coches",
   "page": "https://commons.wikimedia.org/wiki/File:Museu_Nacional_dos_Coches_(Novo).tif",
+  "added": "2026-11-25"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400892/6523781/61.png": {
+  "file": "caxias-quinta.jpg",
+  "source": "Wikimedia Commons",
+  "license": "CC BY-SA 3.0",
+  "artist": "Applefogia",
+  "page": "https://commons.wikimedia.org/wiki/File:Quinta_real_Caxias-2.jpg",
   "added": "2026-11-25"
  }
 }
