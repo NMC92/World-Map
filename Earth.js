@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-25-heading-cone2';
+window.__mappuBuild = '2026-11-25-compass-cone';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -38,6 +38,11 @@ const PROTO_HEADING_RAW = PROTO_TEST ? new URLSearchParams(window.location.searc
 const PROTO_HEADING = PROTO_HEADING_RAW !== null && PROTO_HEADING_RAW.trim() !== '' && Number.isFinite(Number(PROTO_HEADING_RAW))
 	? Number(PROTO_HEADING_RAW) : NaN;
 if(PROTO_FIX !== null && Number.isFinite(PROTO_HEADING)) PROTO_FIX.heading = PROTO_HEADING;
+// ?compass=<deg> pretends the device compass is running, so the compass branch can be
+// exercised without a phone: no test can dispatch a real deviceorientation event.
+const PROTO_COMPASS_RAW = PROTO_TEST ? new URLSearchParams(window.location.search).get('compass') : null;
+const PROTO_COMPASS = PROTO_COMPASS_RAW !== null && PROTO_COMPASS_RAW.trim() !== '' && Number.isFinite(Number(PROTO_COMPASS_RAW))
+	? Number(PROTO_COMPASS_RAW) : null;
 const PROTO_FIX2 = protoFix('fix2');
 // How long to wait before the second fix (the cross-branch / nearest-pin regression test).
 const PROTO_FIX2_DELAY = Math.max(1000, Number(new URLSearchParams(window.location.search).get('fix2delay') || 7000));
@@ -1855,6 +1860,8 @@ $(function()
 		let gpsFix = null;         // the newest { lat, lon, accuracy }
 		let gpsMarker = null;      // { group, halo, cone, dot, fade } in the SVG document
 		let gpsHeadingLogged;      // last heading written to the console, for the proto test
+		let compassHeading = null; // the device compass, when it is running and trusted
+		let compassBound = false;
 		let gpsNavigating = false; // the click chain is running
 		let gpsForceNext = false;  // the next fix should move the view (a Locate press)
 		let gpsParishId = '';     // the parish the view was last sent to
@@ -2314,6 +2321,97 @@ $(function()
 			}
 		}
 
+		/**
+		 * Point the cone at the direction the user faces.
+		 *
+		 * The compass wins over the travel direction the GPS fix carried, because it
+		 * works while standing still — which is the whole point of the indicator. With
+		 * neither available the cone is hidden rather than guessed.
+		 */
+		function gpsOrientCone()
+		{
+			if(gpsMarker === null)
+				return;
+			const { cone, dot } = gpsMarker;
+			const heading = compassHeading !== null ? compassHeading : gpsMarker.travelHeading;
+			const x = Number(dot.getAttribute('cx')), y = Number(dot.getAttribute('cy'));
+			if(heading === null || heading === undefined || !Number.isFinite(heading) || !Number.isFinite(x))
+			{
+				cone.setAttribute('display', 'none');
+				return;
+			}
+			const reach = 0.3, spread = 0.13;
+			cone.setAttribute('display', 'inline');
+			cone.setAttribute('transform', `translate(${x} ${y}) rotate(${heading})`);
+			cone.querySelectorAll('path').forEach(layer =>
+			{
+				const part = Number(layer.getAttribute('data-part'));
+				const r = reach * part, w = spread * part;
+				layer.setAttribute('d', `M 0,0 L ${-w},${-r * 0.86} Q 0,${-r * 1.12} ${w},${-r * 0.86} Z`);
+			});
+			if(gpsHeadingLogged === null || Math.abs(heading - gpsHeadingLogged) >= 10)
+			{
+				console.log(`[gps] heading ${heading.toFixed(0)} deg${compassHeading !== null ? ' (compass)' : ''}`);
+				gpsHeadingLogged = heading;
+			}
+		}
+
+		/**
+		 * Bind the device compass, so the cone shows which way the phone points without
+		 * the user having to move. iOS needs a user gesture to grant it, so this is
+		 * called from the Locate press.
+		 */
+		function gpsBindCompass()
+		{
+			if(compassBound || typeof window.DeviceOrientationEvent === 'undefined')
+			{
+				compassBound = true;
+				return;
+			}
+			compassBound = true;
+			const read = event =>
+			{
+				let degrees = null;
+				// iOS: absolute compass heading, valid while standing still.
+				if(Number.isFinite(event.webkitCompassHeading))
+					degrees = event.webkitCompassHeading;
+				// Android: alpha is degrees counter-clockwise from north, absolute only.
+				else if(event.absolute === true && Number.isFinite(event.alpha))
+					degrees = 360 - event.alpha;
+				if(degrees === null)
+					return;
+				const next = ((degrees % 360) + 360) % 360;
+				if(compassHeading !== null && Math.abs(next - compassHeading) < 1)
+					return;
+				compassHeading = next;
+				gpsOrientCone();
+			};
+			window.addEventListener('deviceorientationabsolute', read, true);
+			window.addEventListener('deviceorientation', read, true);
+			console.log('[gps] compass listening');
+		}
+
+		async function gpsRequestCompass()
+		{
+			const events = window.DeviceOrientationEvent;
+			if(events && typeof events.requestPermission === 'function')
+			{
+				try
+				{
+					const granted = await events.requestPermission();
+					console.log(`[gps] compass permission ${granted}`);
+					if(granted !== 'granted')
+						return;
+				}
+				catch (error)
+				{
+					console.log('[gps] compass permission refused', error && error.message);
+					return;
+				}
+			}
+			gpsBindCompass();
+		}
+
 		/** Draw or move the marker, on top of whatever the map has drawn so far. */
 		function gpsDrawMarker(fix)
 		{
@@ -2334,33 +2432,26 @@ $(function()
 				dot.setAttribute('fill', '#1a73e8');
 				dot.setAttribute('stroke', '#ffffff');
 				dot.setAttribute('stroke-width', '0.02');
-				// The direction of travel: a wedge behind the dot that fades out, the way
-				// a phone's own map shows heading. It is drawn pointing up (-y, north) and
-				// rotated by the reported heading, so the fade runs from the dot outwards.
-				const defs = doc.querySelector('defs') || doc.appendChild(doc.createElementNS(ns, 'defs'));
-				const fade = doc.createElementNS(ns, 'radialGradient');
-				fade.setAttribute('id', 'gps-heading-fade');
-				fade.setAttribute('gradientUnits', 'userSpaceOnUse');
-				const fadeIn = doc.createElementNS(ns, 'stop');
-				fadeIn.setAttribute('offset', '0%');
-				fadeIn.setAttribute('stop-color', '#1a73e8');
-				fadeIn.setAttribute('stop-opacity', '0.5');
-				const fadeOut = doc.createElementNS(ns, 'stop');
-				fadeOut.setAttribute('offset', '100%');
-				fadeOut.setAttribute('stop-color', '#1a73e8');
-				fadeOut.setAttribute('stop-opacity', '0');
-				fade.appendChild(fadeIn);
-				fade.appendChild(fadeOut);
-				defs.appendChild(fade);
-				const cone = doc.createElementNS(ns, 'path');
+				// The direction of travel: a soft wedge behind the dot, the cue a phone map
+				// gives. NO gradient: an unresolvable url(#...) fill paints BLACK in Chrome,
+				// which is what the first version did. Stacking translucent wedges of
+				// decreasing length fades outward without any paint server, and cannot fail.
+				const cone = doc.createElementNS(ns, 'g');
 				cone.setAttribute('id', 'gps-heading');
-				cone.setAttribute('fill', 'url(#gps-heading-fade)');
 				cone.setAttribute('display', 'none');
+				[[0.55, 0.2], [0.78, 0.12], [1, 0.07]].forEach(([part, opacity]) =>
+				{
+					const layer = doc.createElementNS(ns, 'path');
+					layer.setAttribute('fill', '#1a73e8');
+					layer.setAttribute('fill-opacity', String(opacity));
+					layer.setAttribute('data-part', String(part));
+					cone.appendChild(layer);
+				});
 				group.appendChild(halo);
 				group.appendChild(cone);
 				group.appendChild(dot);
 				htmlPaths.appendChild(group);
-				gpsMarker = { group, halo, dot, cone, fade };
+				gpsMarker = { group, halo, dot, cone };
 			}
 			const { x, y } = lonLatToXY(fix.lon, fix.lat);
 			// A circle smaller than the dot could not be read; below that the accuracy
@@ -2374,27 +2465,11 @@ $(function()
 			halo.setAttribute('cx', x);
 			halo.setAttribute('cy', y);
 			halo.setAttribute('r', haloR);
-			// Heading null is normal: a stationary phone, or no compass.
-			const { cone, fade } = gpsMarker;
-			const headingDeg = Number.isFinite(fix.heading) ? ((fix.heading % 360) + 360) % 360 : null;
-			if(headingDeg === null)
-				cone.setAttribute('display', 'none');
-			else
-			{
-				const reach = 0.45, spread = 0.17;
-				cone.setAttribute('display', 'inline');
-				cone.setAttribute('d', `M ${x},${y} L ${x - spread},${y - reach * 0.88} `
-					+ `Q ${x},${y - reach * 1.1} ${x + spread},${y - reach * 0.88} Z`);
-				cone.setAttribute('transform', `rotate(${headingDeg} ${x} ${y})`);
-				fade.setAttribute('cx', x);
-				fade.setAttribute('cy', y);
-				fade.setAttribute('r', reach * 1.1);
-				if(gpsHeadingLogged === null || Math.abs(headingDeg - gpsHeadingLogged) >= 10)
-				{
-					console.log(`[gps] heading ${headingDeg.toFixed(0)} deg`);
-					gpsHeadingLogged = headingDeg;
-				}
-			}
+			// The travel direction the fix carried; the compass, when it is running, wins.
+			gpsMarker.travelHeading = Number.isFinite(fix.heading) ? ((fix.heading % 360) + 360) % 360 : null;
+			if(PROTO_COMPASS !== null && compassHeading === null)
+				compassHeading = ((PROTO_COMPASS % 360) + 360) % 360;
+			gpsOrientCone();
 			htmlPaths.appendChild(group);
 			return { x, y };
 		}
@@ -2588,6 +2663,9 @@ $(function()
 				gpsStatus('This browser has no geolocation.');
 				return;
 			}
+			// A press is the gesture iOS wants before it hands over the compass. Fire and
+			// forget: geolocation must not wait on a permission prompt.
+			gpsRequestCompass();
 			// Browsers expose navigator.geolocation on a plain-http page and then deny
 			// every request, which reads as "permission denied" when the real answer is
 			// "this page is not a secure context". Say the useful thing instead.
