@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-25-cone-nostroke';
+window.__mappuBuild = '2026-11-25-cone-six';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -2343,7 +2343,7 @@ $(function()
 				cone.setAttribute('display', 'none');
 				return;
 			}
-			const reach = 0.3, spread = 0.13;
+			const reach = 0.36, spread = 0.145;
 			cone.setAttribute('display', 'inline');
 			cone.setAttribute('transform', `translate(${x} ${y}) rotate(${heading})`);
 			cone.querySelectorAll('path').forEach(layer =>
@@ -2444,7 +2444,11 @@ $(function()
 				const cone = doc.createElementNS(ns, 'g');
 				cone.setAttribute('id', 'gps-heading');
 				cone.setAttribute('display', 'none');
-				[[0.55, 0.2], [0.78, 0.12], [1, 0.07]].forEach(([part, opacity]) =>
+				// Six even steps rather than three: at three the layer edges were visible as
+				// bands next to Google's continuous fade. Opacity falls 0.22 -> 0.03 so the
+				// stack is strongest at the dot and all but gone at the tip.
+				[[0.46, 0.22], [0.57, 0.18], [0.68, 0.14], [0.79, 0.10], [0.90, 0.06], [1, 0.03]]
+					.forEach(([part, opacity]) =>
 				{
 					const layer = doc.createElementNS(ns, 'path');
 					layer.style.fill = '#1a73e8';
