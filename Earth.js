@@ -1,6 +1,6 @@
 // Bumped whenever Earth.js changes, so the console can prove which build is
 // running. A stale cached bundle has already cost one round of debugging.
-window.__mappuBuild = '2026-11-25-cone-six';
+window.__mappuBuild = '2026-11-27-back-keeps-parish';
 
 // The lat/lon → map-frame maths, the parish point-in-polygon and the click chain
 // are in their own module so node can check them: tools/test-gps-frame.mjs. See
@@ -2769,9 +2769,15 @@ $(function()
 				const glob = clicked.at(-1);
 				if(glob !== undefined)
 				{
+					// Back is returning TO this parish, so its outline must stay drawn.
+					// showPath is there because zoomOnElement needs a measurable bbox; the
+					// hidePath that used to follow it emptied the parish's `d`, and an empty
+					// path draws nothing and catches no clicks - the parish disappeared,
+					// leaving the page background showing through and the area unpickable.
+					// The parent branch below does show-then-hide because it leaves that
+					// level and its children take over; this branch does not.
 					showPath(glob.Path, glob.D);
 					zoomOnElement(glob, a.target.contentDocument);
-					hidePath(glob.Path);
 					span.innerHTML = glob.Element.Name_Child + pinsFilterNote(glob.Element);
 				}
 				return;
