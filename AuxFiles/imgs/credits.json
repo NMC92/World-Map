@@ -4630,5 +4630,45 @@
   "artist": "Jose Manuel",
   "page": "https://commons.wikimedia.org/wiki/File:Est%C3%A1tua_de_Afonso_de_Albuquerque.JPG",
   "added": "2026-11-26"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400893/6528458/73.png": {
+  "file": "Torre do Relógio (Queluz), Queluz.jpg",
+  "source": "Own work",
+  "license": "CC BY-SA 4.0",
+  "artist": "NMC92",
+  "page": "https://github.com/NMC92/World-Map",
+  "added": "2026-11-27"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400888/6519344/30.png": {
+  "file": "Graffiti COVID-19, Mina de Água.jpg",
+  "source": "Own work",
+  "license": "CC BY-SA 4.0",
+  "artist": "NMC92",
+  "page": "https://github.com/NMC92/World-Map",
+  "added": "2026-11-27"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400888/6519344/20.png": {
+  "file": "Jardim da Mina, Mina de Água.jpg",
+  "source": "Own work",
+  "license": "CC BY-SA 4.0",
+  "artist": "NMC92",
+  "page": "https://github.com/NMC92/World-Map",
+  "added": "2026-11-27"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400888/6519343/3.png": {
+  "file": "Capela da Falagueira, Falagueira-Venda Nova.jpg",
+  "source": "Own work",
+  "license": "CC BY-SA 4.0",
+  "artist": "NMC92",
+  "page": "https://github.com/NMC92/World-Map",
+  "added": "2026-11-27"
+ },
+ "AuxFiles/imgs/3/30/295480/2897141/5400888/6519343/10.png": {
+  "file": "Junta de Freguesia da Falagueira-Venda Nova.jpg",
+  "source": "Own work",
+  "license": "CC BY-SA 4.0",
+  "artist": "NMC92",
+  "page": "https://github.com/NMC92/World-Map",
+  "added": "2026-11-27"
  }
 }
